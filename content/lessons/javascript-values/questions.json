@@ -1,0 +1,133 @@
+{
+  "schemaVersion": 1,
+  "lessonId": "javascript-values",
+  "questions": [
+    {
+      "id": "javascript-values-choice",
+      "version": 1,
+      "type": "choice",
+      "title": "確認觀念",
+      "prompt": "哪個敘述符合物件賦值的行為？",
+      "points": 25,
+      "explanation": "const 限制變數重新賦值，不會自動凍結物件；物件賦值可共享同一個參照。",
+      "multiple": false,
+      "options": [
+        {
+          "id": "new-object",
+          "text": "每次賦值都會深度複製物件"
+        },
+        {
+          "id": "shared",
+          "text": "兩個變數可能指向同一個物件"
+        },
+        {
+          "id": "immutable",
+          "text": "const 會讓物件所有屬性不可修改"
+        }
+      ],
+      "correctIds": ["shared"]
+    },
+    {
+      "id": "javascript-values-fill",
+      "version": 1,
+      "type": "fill",
+      "title": "補上關鍵概念",
+      "prompt": "展開運算子 { ...source } 對巢狀物件進行的是哪一種複製？",
+      "points": 25,
+      "explanation": "展開運算子只建立新的外層物件，內層物件參照仍可能共享。",
+      "answers": ["淺拷貝", "淺複製", "shallow copy"],
+      "normalization": {
+        "trim": true,
+        "caseSensitive": false,
+        "collapseWhitespace": true
+      }
+    },
+    {
+      "id": "javascript-values-short",
+      "version": 1,
+      "type": "short",
+      "title": "用自己的話解釋",
+      "prompt": "為什麼直接修改傳入函式的物件，可能造成其他程式也讀到修改後的資料？",
+      "points": 25,
+      "explanation": "兩個變數可能持有同一物件的參照。直接修改屬性會改變共享物件，所以其他持有該參照的程式也會讀到變更。",
+      "referenceAnswer": "兩個變數可能持有同一物件的參照。直接修改屬性會改變共享物件，所以其他持有該參照的程式也會讀到變更。",
+      "criteria": [
+        {
+          "id": "shared-reference",
+          "label": "說明共享參照",
+          "points": 15,
+          "acceptedPhrases": ["持有同一物件的參照", "指向同一個物件"],
+          "keywordGroups": [["參照", "reference"], ["共享", "同一", "相同"]],
+          "misconceptions": ["賦值一定會深拷貝"],
+          "semanticThreshold": null
+        },
+        {
+          "id": "observable-mutation",
+          "label": "說明修改的影響",
+          "points": 10,
+          "acceptedPhrases": ["其他程式也會讀到變更", "其他變數也會讀到修改"],
+          "keywordGroups": [["修改", "變更"], ["其他", "另一", "共享"]],
+          "misconceptions": ["const 讓物件不可變"],
+          "semanticThreshold": null
+        }
+      ]
+    },
+    {
+      "id": "javascript-values-code",
+      "version": 1,
+      "type": "code",
+      "title": "加總正數",
+      "prompt": "實作 solve(values)，回傳陣列中所有大於 0 的數字總和。輸入為有限數字陣列；空陣列回傳 0。請保留原始輸入。",
+      "points": 25,
+      "explanation": "請依輸入與輸出契約處理邊界條件。可展開參考解法，並用測資驗證。",
+      "entrypoint": "solve",
+      "starters": {
+        "javascript": "function solve(values) {\n  // 回傳所有正數的總和\n  return 0;\n}",
+        "typescript": "function solve(values: number[]): number {\n  return 0;\n}"
+      },
+      "solutions": {
+        "javascript": "function solve(values) { return values.filter((value) => value > 0).reduce((sum, value) => sum + value, 0); }",
+        "typescript": "function solve(values: number[]): number { return values.filter((value) => value > 0).reduce((sum, value) => sum + value, 0); }"
+      },
+      "comparison": {
+        "kind": "deepEqual"
+      },
+      "limits": {
+        "timeMs": 500,
+        "memoryMb": 32
+      },
+      "tests": [
+        {
+          "id": "mixed",
+          "label": "正負數與零",
+          "args": [[1, -2, 0, 3]],
+          "expected": 4
+        },
+        {
+          "id": "empty",
+          "label": "空陣列",
+          "args": [[]],
+          "expected": 0
+        },
+        {
+          "id": "negative",
+          "label": "全部負數",
+          "args": [[-1, -8]],
+          "expected": 0
+        },
+        {
+          "id": "duplicates",
+          "label": "保留重複值",
+          "args": [[2, 2, 2]],
+          "expected": 6
+        },
+        {
+          "id": "decimals",
+          "label": "小數",
+          "args": [[0.5, -1, 1.5]],
+          "expected": 2
+        }
+      ]
+    }
+  ]
+}

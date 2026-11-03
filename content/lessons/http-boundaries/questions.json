@@ -1,0 +1,180 @@
+{
+  "schemaVersion": 1,
+  "lessonId": "http-boundaries",
+  "questions": [
+    {
+      "id": "http-boundaries-choice",
+      "version": 1,
+      "type": "choice",
+      "title": "確認觀念",
+      "prompt": "下列哪些工作適合放在 API 輸入邊界？",
+      "points": 25,
+      "explanation": "輸入可能來自其他客戶端或被自行構造，伺服器邊界仍需要驗證。",
+      "multiple": true,
+      "options": [
+        {
+          "id": "shape",
+          "text": "驗證必填欄位與型別"
+        },
+        {
+          "id": "range",
+          "text": "驗證 ID 是否為正整數"
+        },
+        {
+          "id": "trust",
+          "text": "因為前端有型別就完全信任輸入"
+        }
+      ],
+      "correctIds": ["shape", "range"]
+    },
+    {
+      "id": "http-boundaries-fill",
+      "version": 1,
+      "type": "fill",
+      "title": "補上關鍵概念",
+      "prompt": "請求已驗證身分，但沒有操作權限，通常使用哪個 HTTP 狀態碼？",
+      "points": 25,
+      "explanation": "403 常用來表示無操作權限；401 通常表示需要身分驗證。",
+      "answers": ["403"],
+      "normalization": {
+        "trim": true,
+        "caseSensitive": true,
+        "collapseWhitespace": true
+      }
+    },
+    {
+      "id": "http-boundaries-short",
+      "version": 1,
+      "type": "short",
+      "title": "用自己的話解釋",
+      "prompt": "成功與失敗都回傳物件時，為什麼增加 ok 欄位有幫助？",
+      "points": 25,
+      "explanation": "ok 可以當作 discriminated union 的判別欄位。呼叫端檢查 ok 後，TypeScript 可收斂到成功或失敗分支，並各自處理 value 或 error。",
+      "referenceAnswer": "ok 可以當作 discriminated union 的判別欄位。呼叫端檢查 ok 後，TypeScript 可收斂到成功或失敗分支，並各自處理 value 或 error。",
+      "criteria": [
+        {
+          "id": "discriminator",
+          "label": "說明判別欄位",
+          "points": 15,
+          "acceptedPhrases": ["判別欄位", "discriminated union"],
+          "keywordGroups": [["ok"], ["判別", "區分", "分支"]],
+          "misconceptions": ["ok 會自動驗證外部資料"],
+          "semanticThreshold": null
+        },
+        {
+          "id": "narrowing",
+          "label": "說明呼叫端處理",
+          "points": 10,
+          "acceptedPhrases": [
+            "收斂到成功或失敗分支",
+            "各自處理 value 或 error"
+          ],
+          "keywordGroups": [
+            ["成功", "value"],
+            ["失敗", "error"],
+            ["處理", "收斂", "narrow"]
+          ],
+          "misconceptions": ["失敗一定有 value"],
+          "semanticThreshold": null
+        }
+      ]
+    },
+    {
+      "id": "http-boundaries-code",
+      "version": 1,
+      "type": "code",
+      "title": "讀取正整數 ID",
+      "prompt": "實作 solve(payload)。若 payload 是非 null 物件，且 id 是大於 0 的整數，回傳 { ok: true, value: id }；其餘回傳 { ok: false, error: \"invalid-id\" }。數字字串不接受。",
+      "points": 25,
+      "explanation": "請依輸入與輸出契約處理邊界條件。可展開參考解法，並用測資驗證。",
+      "entrypoint": "solve",
+      "starters": {
+        "javascript": "function solve(payload) {\n  return { ok: false, error: \"invalid-id\" };\n}",
+        "typescript": "type Result = { ok: true; value: number } | { ok: false; error: \"invalid-id\" };\nfunction solve(payload: unknown): Result {\n  return { ok: false, error: \"invalid-id\" };\n}"
+      },
+      "solutions": {
+        "javascript": "function solve(payload) { if (typeof payload === \"object\" && payload !== null && \"id\" in payload && typeof payload.id === \"number\" && Number.isInteger(payload.id) && payload.id > 0) return { ok: true, value: payload.id }; return { ok: false, error: \"invalid-id\" }; }",
+        "typescript": "type Result = { ok: true; value: number } | { ok: false; error: \"invalid-id\" }; function solve(payload: unknown): Result { if (typeof payload === \"object\" && payload !== null && \"id\" in payload && typeof payload.id === \"number\" && Number.isInteger(payload.id) && payload.id > 0) return { ok: true, value: payload.id }; return { ok: false, error: \"invalid-id\" }; }"
+      },
+      "comparison": {
+        "kind": "deepEqual"
+      },
+      "limits": {
+        "timeMs": 500,
+        "memoryMb": 32
+      },
+      "tests": [
+        {
+          "id": "valid",
+          "label": "有效 ID",
+          "args": [
+            {
+              "id": 7
+            }
+          ],
+          "expected": {
+            "ok": true,
+            "value": 7
+          }
+        },
+        {
+          "id": "null",
+          "label": "null",
+          "args": [null],
+          "expected": {
+            "ok": false,
+            "error": "invalid-id"
+          }
+        },
+        {
+          "id": "string",
+          "label": "不接受字串",
+          "args": [
+            {
+              "id": "7"
+            }
+          ],
+          "expected": {
+            "ok": false,
+            "error": "invalid-id"
+          }
+        },
+        {
+          "id": "zero",
+          "label": "不接受零",
+          "args": [
+            {
+              "id": 0
+            }
+          ],
+          "expected": {
+            "ok": false,
+            "error": "invalid-id"
+          }
+        },
+        {
+          "id": "decimal",
+          "label": "不接受小數",
+          "args": [
+            {
+              "id": 1.5
+            }
+          ],
+          "expected": {
+            "ok": false,
+            "error": "invalid-id"
+          }
+        },
+        {
+          "id": "missing",
+          "label": "缺少欄位",
+          "args": [{}],
+          "expected": {
+            "ok": false,
+            "error": "invalid-id"
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,203 @@
+{
+  "schemaVersion": 1,
+  "lessonId": "cache-aside",
+  "questions": [
+    {
+      "id": "cache-aside-choice",
+      "version": 1,
+      "type": "choice",
+      "title": "確認觀念",
+      "prompt": "Cache-Aside 在快取未命中時，接著通常做什麼？",
+      "points": 25,
+      "explanation": "應用程式回源取得資料，再把結果寫入快取以供後續讀取。",
+      "multiple": false,
+      "options": [
+        {
+          "id": "database",
+          "text": "讀取資料庫，再寫入快取"
+        },
+        {
+          "id": "error",
+          "text": "一定回傳錯誤"
+        },
+        {
+          "id": "write",
+          "text": "立即覆寫資料庫"
+        }
+      ],
+      "correctIds": ["database"]
+    },
+    {
+      "id": "cache-aside-fill",
+      "version": 1,
+      "type": "fill",
+      "title": "補上關鍵概念",
+      "prompt": "Cache-Aside 命中快取的英文常用詞為 cache ____。",
+      "points": 25,
+      "explanation": "Cache hit 代表找到可用的快取；miss 代表需要回源。",
+      "answers": ["hit"],
+      "normalization": {
+        "trim": true,
+        "caseSensitive": false,
+        "collapseWhitespace": true
+      }
+    },
+    {
+      "id": "cache-aside-short",
+      "version": 1,
+      "type": "short",
+      "title": "用自己的話解釋",
+      "prompt": "為什麼更新資料庫後，仍需要清除對應快取？這樣是否就保證強一致性？",
+      "points": 25,
+      "explanation": "快取可能還保留舊資料，清除後可讓下一次讀取重新回源。但並行讀寫與失效失敗仍可能造成舊值，所以這個順序不保證強一致性。",
+      "referenceAnswer": "快取可能還保留舊資料，清除後可讓下一次讀取重新回源。但並行讀寫與失效失敗仍可能造成舊值，所以這個順序不保證強一致性。",
+      "criteria": [
+        {
+          "id": "invalidate",
+          "label": "說明舊值與失效",
+          "points": 15,
+          "acceptedPhrases": [
+            "快取可能還保留舊資料",
+            "清除後可讓下一次讀取重新回源"
+          ],
+          "keywordGroups": [["快取", "cache"], ["舊", "失效", "清除"]],
+          "misconceptions": ["不需要清除快取"],
+          "semanticThreshold": null
+        },
+        {
+          "id": "consistency",
+          "label": "指出一致性限制",
+          "points": 10,
+          "acceptedPhrases": ["不保證強一致性", "並行讀寫仍可能造成舊值"],
+          "keywordGroups": [
+            ["並行", "競態", "失敗", "不保證"],
+            ["一致性", "舊值", "舊資料"]
+          ],
+          "misconceptions": ["一定保證強一致性", "完全沒有競態"],
+          "semanticThreshold": null
+        }
+      ]
+    },
+    {
+      "id": "cache-aside-code",
+      "version": 1,
+      "type": "code",
+      "title": "模擬 Cache-Aside",
+      "prompt": "實作 solve(initial, events)。資料庫初值為 initial，快取起初不存在。read 事件命中快取就回傳快取，未命中則讀取資料庫並填入快取；write 事件更新資料庫並清除快取。回傳 { reads: 每次 read 的結果陣列, databaseReads: 回源次數 }。事件格式為 { type: \"read\" } 或 { type: \"write\", value: 數字 }。",
+      "points": 25,
+      "explanation": "請依輸入與輸出契約處理邊界條件。可展開參考解法，並用測資驗證。",
+      "entrypoint": "solve",
+      "starters": {
+        "javascript": "function solve(initial, events) {\n  return { reads: [], databaseReads: 0 };\n}",
+        "typescript": "type Event = { type: \"read\" } | { type: \"write\"; value: number };\nfunction solve(initial: number, events: Event[]): { reads: number[]; databaseReads: number } {\n  return { reads: [], databaseReads: 0 };\n}"
+      },
+      "solutions": {
+        "javascript": "function solve(initial, events) { let database = initial; let cache; let databaseReads = 0; const reads = []; for (const event of events) { if (event.type === \"write\") { database = event.value; cache = undefined; } else { if (cache === undefined) { cache = database; databaseReads++; } reads.push(cache); } } return { reads, databaseReads }; }",
+        "typescript": "type Event = { type: \"read\" } | { type: \"write\"; value: number }; function solve(initial: number, events: Event[]): { reads: number[]; databaseReads: number } { let database = initial; let cache: number | undefined; let databaseReads = 0; const reads: number[] = []; for (const event of events) { if (event.type === \"write\") { database = event.value; cache = undefined; } else { if (cache === undefined) { cache = database; databaseReads++; } reads.push(cache); } } return { reads, databaseReads }; }"
+      },
+      "comparison": {
+        "kind": "deepEqual"
+      },
+      "limits": {
+        "timeMs": 500,
+        "memoryMb": 32
+      },
+      "tests": [
+        {
+          "id": "hit",
+          "label": "第二次命中",
+          "args": [
+            5,
+            [
+              {
+                "type": "read"
+              },
+              {
+                "type": "read"
+              }
+            ]
+          ],
+          "expected": {
+            "reads": [5, 5],
+            "databaseReads": 1
+          }
+        },
+        {
+          "id": "invalidate",
+          "label": "寫入後失效",
+          "args": [
+            5,
+            [
+              {
+                "type": "read"
+              },
+              {
+                "type": "write",
+                "value": 8
+              },
+              {
+                "type": "read"
+              }
+            ]
+          ],
+          "expected": {
+            "reads": [5, 8],
+            "databaseReads": 2
+          }
+        },
+        {
+          "id": "zero",
+          "label": "零也是有效值",
+          "args": [
+            0,
+            [
+              {
+                "type": "read"
+              },
+              {
+                "type": "read"
+              }
+            ]
+          ],
+          "expected": {
+            "reads": [0, 0],
+            "databaseReads": 1
+          }
+        },
+        {
+          "id": "empty",
+          "label": "沒有事件",
+          "args": [3, []],
+          "expected": {
+            "reads": [],
+            "databaseReads": 0
+          }
+        },
+        {
+          "id": "writes",
+          "label": "連續寫入",
+          "args": [
+            3,
+            [
+              {
+                "type": "write",
+                "value": 4
+              },
+              {
+                "type": "write",
+                "value": 9
+              },
+              {
+                "type": "read"
+              }
+            ]
+          ],
+          "expected": {
+            "reads": [9],
+            "databaseReads": 1
+          }
+        }
+      ]
+    }
+  ]
+}

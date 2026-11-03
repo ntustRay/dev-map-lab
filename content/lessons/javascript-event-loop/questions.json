@@ -1,0 +1,130 @@
+{
+  "schemaVersion": 1,
+  "lessonId": "javascript-event-loop",
+  "questions": [
+    {
+      "id": "javascript-event-loop-choice",
+      "version": 1,
+      "type": "choice",
+      "title": "確認觀念",
+      "prompt": "教材 A、B、C 的第一個範例會依什麼順序印出？",
+      "points": 25,
+      "explanation": "A 與 C 是同步工作，B 的 Promise callback 等同步工作結束後再執行。",
+      "multiple": false,
+      "options": [
+        {
+          "id": "abc",
+          "text": "A、B、C"
+        },
+        {
+          "id": "acb",
+          "text": "A、C、B"
+        },
+        {
+          "id": "bac",
+          "text": "B、A、C"
+        }
+      ],
+      "correctIds": ["acb"]
+    },
+    {
+      "id": "javascript-event-loop-fill",
+      "version": 1,
+      "type": "fill",
+      "title": "補上關鍵概念",
+      "prompt": "Promise.then 的 callback 在這個基本範例中進入哪一類 queue？",
+      "points": 25,
+      "explanation": "Promise reaction 透過 microtask 排程；它不會直接中斷目前的同步工作。",
+      "answers": ["microtask", "microtask queue", "微任務", "微任務佇列"],
+      "normalization": {
+        "trim": true,
+        "caseSensitive": false,
+        "collapseWhitespace": true
+      }
+    },
+    {
+      "id": "javascript-event-loop-short",
+      "version": 1,
+      "type": "short",
+      "title": "用自己的話解釋",
+      "prompt": "為什麼不建議用真實 setTimeout 等待來測試重試延遲的計算？",
+      "points": 25,
+      "explanation": "真實計時器受到排程與環境影響，會讓測試變慢且不穩定。把延遲計算抽成純函式，可用固定輸入輸出直接驗證，再另外測試計時器與取消行為。",
+      "referenceAnswer": "真實計時器受到排程與環境影響，會讓測試變慢且不穩定。把延遲計算抽成純函式，可用固定輸入輸出直接驗證，再另外測試計時器與取消行為。",
+      "criteria": [
+        {
+          "id": "timer-variability",
+          "label": "指出真實計時器的問題",
+          "points": 15,
+          "acceptedPhrases": ["受到排程與環境影響", "測試變慢且不穩定"],
+          "keywordGroups": [
+            ["計時器", "timer", "等待"],
+            ["排程", "變慢", "不穩定", "環境"]
+          ],
+          "misconceptions": ["setTimeout 一定精確"],
+          "semanticThreshold": null
+        },
+        {
+          "id": "pure-policy",
+          "label": "提出純函式拆分",
+          "points": 10,
+          "acceptedPhrases": ["延遲計算抽成純函式", "固定輸入輸出直接驗證"],
+          "keywordGroups": [["純函式", "輸入輸出"], ["計算", "測試", "驗證"]],
+          "misconceptions": ["延遲無法測試"],
+          "semanticThreshold": null
+        }
+      ]
+    },
+    {
+      "id": "javascript-event-loop-code",
+      "version": 1,
+      "type": "code",
+      "title": "計算重試延遲",
+      "prompt": "實作 solve(base, count, maxDelay)，回傳 count 個延遲值，第 n 項為 min(base × 2ⁿ, maxDelay)，n 從 0 開始。三個輸入皆為非負整數，count 最多 20。本題只計算數字，不啟動 timer。",
+      "points": 25,
+      "explanation": "請依輸入與輸出契約處理邊界條件。可展開參考解法，並用測資驗證。",
+      "entrypoint": "solve",
+      "starters": {
+        "javascript": "function solve(base, count, maxDelay) {\n  return [];\n}",
+        "typescript": "function solve(base: number, count: number, maxDelay: number): number[] {\n  return [];\n}"
+      },
+      "solutions": {
+        "javascript": "function solve(base, count, maxDelay) { return Array.from({ length: count }, (_, index) => Math.min(base * 2 ** index, maxDelay)); }",
+        "typescript": "function solve(base: number, count: number, maxDelay: number): number[] { return Array.from({ length: count }, (_, index) => Math.min(base * 2 ** index, maxDelay)); }"
+      },
+      "comparison": {
+        "kind": "deepEqual"
+      },
+      "limits": {
+        "timeMs": 500,
+        "memoryMb": 32
+      },
+      "tests": [
+        {
+          "id": "capped",
+          "label": "達到上限",
+          "args": [100, 5, 500],
+          "expected": [100, 200, 400, 500, 500]
+        },
+        {
+          "id": "empty",
+          "label": "零次重試",
+          "args": [100, 0, 500],
+          "expected": []
+        },
+        {
+          "id": "zero",
+          "label": "零基礎延遲",
+          "args": [0, 3, 500],
+          "expected": [0, 0, 0]
+        },
+        {
+          "id": "small-cap",
+          "label": "初始值就超過上限",
+          "args": [100, 3, 50],
+          "expected": [50, 50, 50]
+        }
+      ]
+    }
+  ]
+}

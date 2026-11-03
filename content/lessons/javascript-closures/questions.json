@@ -1,0 +1,133 @@
+{
+  "schemaVersion": 1,
+  "lessonId": "javascript-closures",
+  "questions": [
+    {
+      "id": "javascript-closures-choice",
+      "version": 1,
+      "type": "choice",
+      "title": "確認觀念",
+      "prompt": "關於 createCounter 回傳的函式，哪些敘述正確？",
+      "points": 25,
+      "explanation": "Closure 保留 lexical environment 的存取；不同外層呼叫建立不同的環境。",
+      "multiple": true,
+      "options": [
+        {
+          "id": "retained",
+          "text": "外層函式返回後，仍可存取捕捉的變數"
+        },
+        {
+          "id": "independent",
+          "text": "不同 createCounter 呼叫可以擁有不同狀態"
+        },
+        {
+          "id": "global",
+          "text": "所有計數器一定共享一個全域 current"
+        }
+      ],
+      "correctIds": ["retained", "independent"]
+    },
+    {
+      "id": "javascript-closures-fill",
+      "version": 1,
+      "type": "fill",
+      "title": "補上關鍵概念",
+      "prompt": "函式可存取哪些外層變數，取決於定義位置的規則，稱為什麼 scope？",
+      "points": 25,
+      "explanation": "Lexical scope 由程式的定義結構決定。",
+      "answers": ["lexical", "lexical scope", "詞法", "詞法作用域"],
+      "normalization": {
+        "trim": true,
+        "caseSensitive": false,
+        "collapseWhitespace": true
+      }
+    },
+    {
+      "id": "javascript-closures-short",
+      "version": 1,
+      "type": "short",
+      "title": "用自己的話解釋",
+      "prompt": "用自己的話解釋 closure，並說明外層函式返回後為何仍能讀取變數。",
+      "points": 25,
+      "explanation": "Closure 是函式與 lexical environment 的組合。回傳的函式保留外層變數綁定的存取，因此外層函式返回後仍能讀寫它們。",
+      "referenceAnswer": "Closure 是函式與 lexical environment 的組合。回傳的函式保留外層變數綁定的存取，因此外層函式返回後仍能讀寫它們。",
+      "criteria": [
+        {
+          "id": "lexical-environment",
+          "label": "提到函式與外層作用域",
+          "points": 15,
+          "acceptedPhrases": [
+            "函式與 lexical environment 的組合",
+            "函式可存取定義時的外層變數"
+          ],
+          "keywordGroups": [
+            ["函式", "function"],
+            ["作用域", "lexical", "外層"]
+          ],
+          "misconceptions": ["closure 一定是全域變數"],
+          "semanticThreshold": null
+        },
+        {
+          "id": "retained-binding",
+          "label": "提到返回後仍能存取",
+          "points": 10,
+          "acceptedPhrases": ["外層函式返回後仍能讀寫", "返回後仍可存取"],
+          "keywordGroups": [["返回", "結束"], ["仍", "保留"], ["變數", "綁定"]],
+          "misconceptions": ["返回後不能存取"],
+          "semanticThreshold": null
+        }
+      ]
+    },
+    {
+      "id": "javascript-closures-code",
+      "version": 1,
+      "type": "code",
+      "title": "取出計數序列",
+      "prompt": "實作 solve(start, count)，建立一個 closure 計數器，每次取值後加 1，回傳連續 count 次的結果。count 為 0 到 100 的整數。",
+      "points": 25,
+      "explanation": "請依輸入與輸出契約處理邊界條件。可展開參考解法，並用測資驗證。",
+      "entrypoint": "solve",
+      "starters": {
+        "javascript": "function solve(start, count) {\n  // 建立計數器，再收集 count 次回傳值\n  return [];\n}",
+        "typescript": "function solve(start: number, count: number): number[] {\n  return [];\n}"
+      },
+      "solutions": {
+        "javascript": "function solve(start, count) { let current = start; const next = () => current++; return Array.from({ length: count }, () => next()); }",
+        "typescript": "function solve(start: number, count: number): number[] { let current = start; const next = () => current++; return Array.from({ length: count }, () => next()); }"
+      },
+      "comparison": {
+        "kind": "deepEqual"
+      },
+      "limits": {
+        "timeMs": 500,
+        "memoryMb": 32
+      },
+      "tests": [
+        {
+          "id": "basic",
+          "label": "從零開始",
+          "args": [0, 3],
+          "expected": [0, 1, 2]
+        },
+        {
+          "id": "offset",
+          "label": "非零起點",
+          "args": [10, 3],
+          "expected": [10, 11, 12]
+        },
+        {
+          "id": "empty",
+          "label": "取零次",
+          "args": [5, 0],
+          "expected": []
+        },
+        {
+          "id": "negative",
+          "label": "負數起點",
+          "args": [-2, 4],
+          "expected": [-2, -1, 0, 1]
+        }
+      ]
+    }
+  ]
+}

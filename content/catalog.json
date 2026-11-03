@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "tracks": [
+    {
+      "id": "language-foundations",
+      "title": "語言與資料",
+      "description": "從 JavaScript 的值與作用域，走到 TypeScript 的資料驗證。",
+      "lessonIds": [
+        "javascript-values",
+        "javascript-closures",
+        "typescript-narrowing"
+      ]
+    },
+    {
+      "id": "application-architecture",
+      "title": "非同步與應用架構",
+      "description": "從排程與重試，走到 API 契約、快取與一致性。",
+      "lessonIds": ["javascript-event-loop", "http-boundaries", "cache-aside"]
+    }
+  ]
+}

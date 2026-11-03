@@ -1,0 +1,147 @@
+{
+  "schemaVersion": 1,
+  "lessonId": "typescript-narrowing",
+  "questions": [
+    {
+      "id": "typescript-narrowing-choice",
+      "version": 1,
+      "type": "choice",
+      "title": "確認觀念",
+      "prompt": "操作 unknown 值以前，哪種做法會在執行時真的檢查資料？",
+      "points": 25,
+      "explanation": "typeof 與條件判斷會成為執行中的 JavaScript；型別註記與型別斷言不會自動驗證輸入。",
+      "multiple": false,
+      "options": [
+        {
+          "id": "guard",
+          "text": "使用 typeof 與條件判斷"
+        },
+        {
+          "id": "assertion",
+          "text": "只寫型別斷言"
+        },
+        {
+          "id": "annotation",
+          "text": "只在參數加上型別註記"
+        }
+      ],
+      "correctIds": ["guard"]
+    },
+    {
+      "id": "typescript-narrowing-fill",
+      "version": 1,
+      "type": "fill",
+      "title": "補上關鍵概念",
+      "prompt": "typeof null 的字串結果是什麼？",
+      "points": 25,
+      "explanation": "typeof null 回傳 object，所以檢查物件時需要另外排除 null。",
+      "answers": ["object"],
+      "normalization": {
+        "trim": true,
+        "caseSensitive": true,
+        "collapseWhitespace": true
+      }
+    },
+    {
+      "id": "typescript-narrowing-short",
+      "version": 1,
+      "type": "short",
+      "title": "用自己的話解釋",
+      "prompt": "為什麼 API 回傳資料不能只靠 TypeScript 的型別宣告保證正確？",
+      "points": 25,
+      "explanation": "TypeScript 的型別在轉譯後會被移除，不會在執行時檢查 API 資料。外部輸入需要在邊界用 type guard 或 schema 進行實際驗證。",
+      "referenceAnswer": "TypeScript 的型別在轉譯後會被移除，不會在執行時檢查 API 資料。外部輸入需要在邊界用 type guard 或 schema 進行實際驗證。",
+      "criteria": [
+        {
+          "id": "erasure",
+          "label": "說明型別被移除",
+          "points": 15,
+          "acceptedPhrases": ["型別在轉譯後會被移除", "型別不會在執行時檢查"],
+          "keywordGroups": [["型別", "type"], ["移除", "執行時", "runtime"]],
+          "misconceptions": ["TypeScript 會自動驗證 API"],
+          "semanticThreshold": null
+        },
+        {
+          "id": "boundary-check",
+          "label": "說明邊界驗證",
+          "points": 10,
+          "acceptedPhrases": [
+            "外部輸入需要在邊界驗證",
+            "用 type guard 或 schema 進行實際驗證"
+          ],
+          "keywordGroups": [
+            ["驗證", "檢查"],
+            ["邊界", "外部", "guard", "schema"]
+          ],
+          "misconceptions": ["只要斷言就會安全"],
+          "semanticThreshold": null
+        }
+      ]
+    },
+    {
+      "id": "typescript-narrowing-code",
+      "version": 1,
+      "type": "code",
+      "title": "收集有效字串",
+      "prompt": "實作 solve(values)，保留所有字串，移除前後空白並排除清理後的空字串。保留原始順序與重複值。",
+      "points": 25,
+      "explanation": "請依輸入與輸出契約處理邊界條件。可展開參考解法，並用測資驗證。",
+      "entrypoint": "solve",
+      "starters": {
+        "javascript": "function solve(values) {\n  return [];\n}",
+        "typescript": "function solve(values: unknown[]): string[] {\n  return [];\n}"
+      },
+      "solutions": {
+        "javascript": "function solve(values) { return values.filter((value) => typeof value === \"string\").map((value) => value.trim()).filter((value) => value.length > 0); }",
+        "typescript": "function solve(values: unknown[]): string[] { const result: string[] = []; for (const value of values) { if (typeof value === \"string\" && value.trim().length > 0) result.push(value.trim()); } return result; }"
+      },
+      "comparison": {
+        "kind": "deepEqual"
+      },
+      "limits": {
+        "timeMs": 500,
+        "memoryMb": 32
+      },
+      "tests": [
+        {
+          "id": "mixed",
+          "label": "混合型別",
+          "args": [[null, 1, " Ray ", "", false, "TS"]],
+          "expected": ["Ray", "TS"]
+        },
+        {
+          "id": "empty",
+          "label": "空輸入",
+          "args": [[]],
+          "expected": []
+        },
+        {
+          "id": "spaces",
+          "label": "只有空白",
+          "args": [[" ", "\n", "\t"]],
+          "expected": []
+        },
+        {
+          "id": "duplicates",
+          "label": "順序與重複值",
+          "args": [["b", "a", "b"]],
+          "expected": ["b", "a", "b"]
+        },
+        {
+          "id": "object",
+          "label": "物件不轉字串",
+          "args": [
+            [
+              {
+                "name": "Ray"
+              },
+              ["JS"],
+              "ok"
+            ]
+          ],
+          "expected": ["ok"]
+        }
+      ]
+    }
+  ]
+}
