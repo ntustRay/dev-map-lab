@@ -11,7 +11,7 @@ import {
   gradeFill,
   gradeShort,
 } from "../core/grade";
-import { useWorkspace } from "../storage/workspace";
+import { captureWorkspace, useWorkspace } from "../storage/workspace";
 import { Icon } from "./icons";
 
 const CodeEditor = dynamic(() => import("./code-editor"), {
@@ -106,6 +106,7 @@ function QuestionPanel({
   );
   const [busy, setBusy] = useState(false);
   async function submit() {
+    const isCurrent = captureWorkspace();
     setBusy(true);
     try {
       let result: GradeResult;
@@ -114,6 +115,7 @@ function QuestionPanel({
       else if (question.type === "short")
         result = await gradeShort(question, answer);
       else return;
+      if (!isCurrent()) return;
       setGrade(result);
       await recordAttempt(
         lessonId,
@@ -268,6 +270,7 @@ function CodeExercise({
     void saveDraft(question, language, value);
   }
   async function run() {
+    const isCurrent = captureWorkspace();
     const abort = new AbortController();
     controller.current = abort;
     setBusy(true);
@@ -279,7 +282,7 @@ function CodeExercise({
         { question, language, source },
         abort.signal,
       );
-      if (abort.signal.aborted) return;
+      if (abort.signal.aborted || !isCurrent()) return;
       setResult(output);
       await recordAttempt(lessonId, question, source, output.grade);
     } catch (cause) {

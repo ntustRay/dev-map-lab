@@ -15,6 +15,7 @@ import type {
 } from "./schema";
 
 type Workspace = {
+  scope: string;
   ready: boolean;
   error: string | null;
   pendingWrites: number;
@@ -23,6 +24,8 @@ type Workspace = {
   progress: Progress[];
   drafts: Draft[];
   hydrate: () => Promise<void>;
+  switchScope: (scope: string) => Promise<void>;
+  lock: () => void;
   saveNote: (note: Note) => Promise<void>;
   deleteNote: (id: string) => Promise<void>;
   recordAttempt: (
@@ -39,57 +42,106 @@ type Workspace = {
   ) => Promise<void>;
   exportBackup: () => Promise<Backup>;
   importBackup: (raw: unknown) => Promise<void>;
+  importGuest: () => Promise<{
+    notes: number;
+    draftConflicts: number;
+    attemptConflicts: number;
+  }>;
 };
-let hydration: Promise<void> | null = null;
+
+const empty = { notes: [], attempts: [], progress: [], drafts: [] };
+let generation = 0;
+let hydration: { scope: string; promise: Promise<void> } | null = null;
 
 export const useWorkspace = create<Workspace>((set, get) => {
-  async function persist(work: () => Promise<unknown>): Promise<void> {
+  function current() {
+    const state = get();
+    if (!state.ready || state.scope === "locked")
+      throw new Error("資料空間正在切換，請稍候。");
+    return { token: generation, database: getDatabase(state.scope) };
+  }
+  async function persist(
+    token: number,
+    work: () => Promise<unknown>,
+  ): Promise<void> {
     set((state) => ({ pendingWrites: state.pendingWrites + 1 }));
     try {
       await work();
     } catch {
-      set({
-        error:
-          "本機儲存失敗，請先匯出備份，確認瀏覽器允許 IndexedDB 與可用空間。",
-      });
+      if (token === generation)
+        set({
+          error: "本機儲存失敗，請先匯出備份，確認瀏覽器儲存權限與可用空間。",
+        });
     } finally {
-      set((state) => ({ pendingWrites: state.pendingWrites - 1 }));
+      if (token === generation)
+        set((state) => ({
+          pendingWrites: Math.max(0, state.pendingWrites - 1),
+        }));
     }
   }
+  async function switchScope(scope: string) {
+    if (get().ready && get().scope === scope) return;
+    if (hydration?.scope === scope) return hydration.promise;
+    const token = ++generation;
+    set({ ...empty, scope, ready: false, error: null, pendingWrites: 0 });
+    const promise = (async () => {
+      try {
+        const data = await getDatabase(scope).backup();
+        if (token === generation)
+          set({
+            notes: data.notes,
+            attempts: data.attempts,
+            progress: data.progress,
+            drafts: data.drafts,
+            ready: true,
+          });
+      } catch {
+        if (token === generation)
+          set({
+            ready: true,
+            error: "無法開啟本機資料庫；請確認瀏覽器儲存權限，再重新整理。",
+          });
+      } finally {
+        if (token === generation) hydration = null;
+      }
+    })();
+    hydration = { scope, promise };
+    await promise;
+  }
   return {
+    ...empty,
+    scope: "guest",
     ready: false,
     error: null,
     pendingWrites: 0,
-    notes: [],
-    attempts: [],
-    progress: [],
-    drafts: [],
-    hydrate: async () => {
-      hydration ??= (async () => {
-        try {
-          const data = await getDatabase().backup();
-          set({ ...data, ready: true });
-        } catch {
-          set({
-            ready: true,
-            error:
-              "無法開啟本機資料庫；目前內容尚未保存，請確認瀏覽器儲存權限。",
-          });
-        }
-      })();
-      await hydration;
+    hydrate: () =>
+      switchScope(get().scope === "locked" ? "guest" : get().scope),
+    switchScope,
+    lock: () => {
+      generation++;
+      hydration = null;
+      set({
+        ...empty,
+        scope: "locked",
+        ready: false,
+        error: null,
+        pendingWrites: 0,
+      });
     },
     saveNote: async (note) => {
+      const { token, database } = current();
       set((state) => ({
         notes: [...state.notes.filter((item) => item.id !== note.id), note],
       }));
-      await persist(() => getDatabase().notes.put(note));
+      await persist(token, () => database.notes.put(note));
     },
     deleteNote: async (id) => {
+      const { token, database } = current();
       set((state) => ({ notes: state.notes.filter((note) => note.id !== id) }));
-      await persist(() => getDatabase().notes.delete(id));
+      await persist(token, () => database.notes.delete(id));
     },
     recordAttempt: async (lessonId, question, answer, grade) => {
+      const { token, database } = current();
       const attempt: Attempt = {
         id: createLocalId(),
         lessonId,
@@ -101,9 +153,10 @@ export const useWorkspace = create<Workspace>((set, get) => {
         createdAt: Date.now(),
       };
       set((state) => ({ attempts: [...state.attempts, attempt] }));
-      await persist(() => getDatabase().attempts.put(attempt));
+      await persist(token, () => database.attempts.put(attempt));
     },
     markRead: async (lessonId, read) => {
+      const { token, database } = current();
       const progress = { lessonId, read, updatedAt: Date.now() };
       set((state) => ({
         progress: [
@@ -111,9 +164,10 @@ export const useWorkspace = create<Workspace>((set, get) => {
           progress,
         ],
       }));
-      await persist(() => getDatabase().progress.put(progress));
+      await persist(token, () => database.progress.put(progress));
     },
     saveDraft: async (question, language, source) => {
+      const { token, database } = current();
       const draft: Draft = {
         id: `${question.id}:${question.version}:${language}`,
         questionId: question.id,
@@ -125,23 +179,59 @@ export const useWorkspace = create<Workspace>((set, get) => {
       set((state) => ({
         drafts: [...state.drafts.filter((item) => item.id !== draft.id), draft],
       }));
-      await persist(() => getDatabase().drafts.put(draft));
+      await persist(token, () => database.drafts.put(draft));
     },
-    exportBackup: async () => ({
-      schemaVersion: 1,
-      exportedAt: Date.now(),
-      notes: get().notes,
-      attempts: get().attempts,
-      progress: get().progress,
-      drafts: get().drafts,
-    }),
+    exportBackup: async () => {
+      current();
+      return {
+        schemaVersion: 1,
+        exportedAt: Date.now(),
+        notes: get().notes,
+        attempts: get().attempts,
+        progress: get().progress,
+        drafts: get().drafts,
+      };
+    },
     importBackup: async (raw) => {
-      await getDatabase().importBackup(raw);
-      const data = await getDatabase().backup();
-      set({ ...data, ready: true, error: null });
+      const { token, database } = current();
+      await database.importBackup(raw);
+      const data = await database.backup();
+      if (token === generation)
+        set({
+          notes: data.notes,
+          attempts: data.attempts,
+          progress: data.progress,
+          drafts: data.drafts,
+          ready: true,
+          error: null,
+        });
+    },
+    importGuest: async () => {
+      const { token, database } = current();
+      if (!get().scope.startsWith("member-"))
+        throw new Error("請先登入，再匯入訪客資料。");
+      const guest = await getDatabase("guest").backup();
+      const result = await database.importGuest(guest);
+      const data = await database.backup();
+      if (token !== generation)
+        throw new Error("帳號已切換，匯入結果保留在原帳號。");
+      set({
+        notes: data.notes,
+        attempts: data.attempts,
+        progress: data.progress,
+        drafts: data.drafts,
+        error: null,
+      });
+      return result;
     },
   };
 });
+
+// Check after an async operation, before writing data captured by the previous account.
+export function captureWorkspace(): () => boolean {
+  const token = generation;
+  return () => token === generation && useWorkspace.getState().ready;
+}
 
 export function createNote(
   lessonId: string,

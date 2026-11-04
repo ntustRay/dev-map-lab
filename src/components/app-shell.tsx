@@ -2,9 +2,11 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { type ReactNode, useEffect, useState } from "react";
+import { Fragment, type ReactNode, useState } from "react";
+import { useAuth } from "../auth/state";
 import type { Catalog, LessonSummary } from "../core/content-schema";
 import { useWorkspace } from "../storage/workspace";
+import { AuthBridge } from "./auth-bridge";
 import { Brand, Icon } from "./icons";
 
 export function AppShell({
@@ -19,16 +21,15 @@ export function AppShell({
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
   const ready = useWorkspace((state) => state.ready);
+  const scope = useWorkspace((state) => state.scope);
   const error = useWorkspace((state) => state.error);
   const pendingWrites = useWorkspace((state) => state.pendingWrites);
-  const hydrate = useWorkspace((state) => state.hydrate);
+  const member = useAuth((state) => state.member);
   const progress = useWorkspace((state) => state.progress);
-  useEffect(() => {
-    void hydrate();
-  }, [hydrate]);
   const byId = new Map(lessons.map((lesson) => [lesson.id, lesson]));
   return (
     <div className="app-shell">
+      <AuthBridge />
       <button
         className="mobile-menu icon-button"
         type="button"
@@ -76,6 +77,15 @@ export function AppShell({
             <Icon name="note" />
             我的筆記
           </Link>
+          <Link
+            className={`nav-item ${pathname.startsWith("/account") || pathname.startsWith("/auth") ? "active" : ""}`}
+            href="/account/"
+            aria-current={pathname.startsWith("/account") ? "page" : undefined}
+            onClick={() => setMenuOpen(false)}
+          >
+            <Icon name="member" />
+            {member ? "會員與備份" : "登入與會員"}
+          </Link>
           <p className="nav-section-label">學習路線</p>
           {catalog.tracks.map((track) => (
             <div className="nav-track" key={track.id}>
@@ -108,7 +118,7 @@ export function AppShell({
         </nav>
         <div className="sidebar-footer">
           <span className="status-dot" />
-          <strong>本機學習空間</strong>
+          <strong>{member ? "會員學習空間" : "訪客學習空間"}</strong>
           <p>筆記與進度保存在這個瀏覽器。可從「我的筆記」匯出備份。</p>
           <a
             href="https://github.com/ntustRay/dev-map-lab"
@@ -140,7 +150,11 @@ export function AppShell({
             <Link href="/notes/">前往備份</Link>
           </div>
         ) : null}
-        <main id="main-content">{children}</main>
+        <main id="main-content">
+          <Fragment key={pathname.startsWith("/auth/") ? "auth-flow" : scope}>
+            {children}
+          </Fragment>
+        </main>
         <footer className="app-footer">
           <span>Dev Map Lab</span>
           <span>程式與架構學習</span>

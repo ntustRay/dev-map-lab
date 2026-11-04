@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 
 type Name =
+  | "member"
   | "map"
   | "book"
   | "code"
@@ -17,6 +18,12 @@ type Name =
   | "stop"
   | "trash";
 const shapes: Record<Name, ReactNode> = {
+  member: (
+    <>
+      <circle cx="12" cy="8" r="4" />
+      <path d="M4 21v-2a8 8 0 0 1 16 0v2" />
+    </>
+  ),
   map: (
     <>
       <path d="m3 5 6-2 6 2 6-2v16l-6 2-6-2-6 2V5Z" />

@@ -3,7 +3,11 @@
 import Link from "next/link";
 import { useRef, useState } from "react";
 import type { LessonSummary } from "../core/content-schema";
-import { downloadText, useWorkspace } from "../storage/workspace";
+import {
+  captureWorkspace,
+  downloadText,
+  useWorkspace,
+} from "../storage/workspace";
 import { Icon } from "./icons";
 
 export function Notebook({ lessons }: { lessons: LessonSummary[] }) {
@@ -30,7 +34,9 @@ export function Notebook({ lessons }: { lessons: LessonSummary[] }) {
     )
     .sort((a, b) => b.updatedAt - a.updatedAt);
   async function exportAll() {
+    const isCurrent = captureWorkspace();
     const data = await exportBackup();
+    if (!isCurrent()) return;
     downloadText(
       `dev-map-lab-backup-${new Date().toISOString().slice(0, 10)}.json`,
       JSON.stringify(data, null, 2),
@@ -39,13 +45,16 @@ export function Notebook({ lessons }: { lessons: LessonSummary[] }) {
     setNotice("已下載包含筆記、進度、作答與程式草稿的備份。");
   }
   async function importFile(file: File) {
+    const isCurrent = captureWorkspace();
     setBusy(true);
     setNotice(null);
     try {
       if (file.size > 10 * 1024 * 1024)
         throw new Error("備份檔案超過 10 MB，請先縮小檔案。");
       const raw: unknown = JSON.parse(await file.text());
+      if (!isCurrent()) return;
       await importBackup(raw);
+      if (!isCurrent()) return;
       setNotice("已合併備份。同一則資料保留較新的版本，不會清除現有筆記。");
     } catch {
       setNotice(
