@@ -17,10 +17,7 @@ type Identity = {
   id: string;
   email: string;
   user_metadata: Record<string, unknown>;
-};
-type IdentityResponse = {
-  data: { user: Identity | null };
-  error: { name: string } | null;
+  email_confirmed_at?: string;
 };
 type Listener = (
   event: string,
@@ -28,24 +25,23 @@ type Listener = (
 ) => void;
 const sdk = vi.hoisted(() => {
   const listener: { current: Listener | null } = { current: null };
-  return { getUser: vi.fn<() => Promise<IdentityResponse>>(), listener };
+  return { getVerifiedUser: vi.fn<() => Promise<Identity | null>>(), listener };
 });
 vi.mock("../src/auth/config", async (original) => ({
   ...(await original<typeof import("../src/auth/config")>()),
   getAuthConfiguration: () => ({
     status: "ready",
     value: {
-      url: "https://sessions.supabase.co",
-      projectNamespace: "sessions.supabase.co",
-      publishableKey: "sb_publishable_test_only",
+      url: "https://ep-sessions.neon.tech/neondb",
+      projectNamespace: "ep-sessions.neon.tech.neondb",
       providers: [],
     },
   }),
 }));
 vi.mock("../src/auth/client", () => ({
-  getSupabaseClient: () => ({
+  getVerifiedUser: sdk.getVerifiedUser,
+  getMemberClient: () => ({
     auth: {
-      getUser: sdk.getUser,
       onAuthStateChange: (listener: Listener) => {
         sdk.listener.current = listener;
         return {
@@ -67,14 +63,16 @@ import { startAuth, useAuth } from "../src/auth/state";
 
 const a = "11111111-1111-4111-8111-111111111111";
 const b = "22222222-2222-4222-8222-222222222222";
-const scopeA = accountScope("sessions.supabase.co", a);
-const scopeB = accountScope("sessions.supabase.co", b);
+const scopeA = accountScope("ep-sessions.neon.tech.neondb", a);
+const scopeB = accountScope("ep-sessions.neon.tech.neondb", b);
 const scopes = ["guest", scopeA, scopeB];
 let stop = () => {};
-function user(id: string): IdentityResponse {
+function user(id: string): Identity {
   return {
-    data: { user: { id, email: `${id}@example.test`, user_metadata: {} } },
-    error: null,
+    id,
+    email: `${id}@example.test`,
+    user_metadata: {},
+    email_confirmed_at: "2026-11-05T00:00:00Z",
   };
 }
 function note(body: string): Note {
@@ -103,10 +101,9 @@ beforeEach(async () => {
     status: "checking",
     member: null,
     error: null,
-    recovery: false,
   });
-  sdk.getUser.mockReset();
-  sdk.getUser.mockResolvedValue(user(a));
+  sdk.getVerifiedUser.mockReset();
+  sdk.getVerifiedUser.mockResolvedValue(user(a));
   for (const scope of scopes) {
     const db = getDatabase(scope);
     for (const table of db.tables) await table.clear();
@@ -123,7 +120,7 @@ afterAll(async () => {
 });
 
 describe("會員狀態與實際本機工作空間切換", () => {
-  it("getUser 驗證後只載入該帳號，登出立即移除會員資料", async () => {
+  it("getVerifiedUser 驗證後只載入該帳號，登出立即移除會員資料", async () => {
     await getDatabase(scopeA).notes.put(note("private A"));
     await getDatabase("guest").notes.put(note("guest"));
     stop = startAuth();
@@ -135,9 +132,11 @@ describe("會員狀態與實際本機工作空間切換", () => {
     await useWorkspace.getState().switchScope("guest");
     expect(useWorkspace.getState().notes[0]?.body).toBe("guest");
   });
-  it("新登入事件會立刻作廢舊 getUser 回應，不讓 A 閃回 B 的畫面", async () => {
-    const old = deferred<IdentityResponse>();
-    sdk.getUser.mockReturnValueOnce(old.promise).mockResolvedValue(user(b));
+  it("新登入事件會立刻作廢舊 getVerifiedUser 回應，不讓 A 閃回 B 的畫面", async () => {
+    const old = deferred<Identity | null>();
+    sdk.getVerifiedUser
+      .mockReturnValueOnce(old.promise)
+      .mockResolvedValue(user(b));
     stop = startAuth();
     sdk.listener.current?.("SIGNED_IN", { user: { id: b } });
     old.resolve(user(a));
@@ -151,8 +150,8 @@ describe("會員狀態與實際本機工作空間切換", () => {
   it("登出時尚未返回的驗證請求不能把會員資料放回來", async () => {
     stop = startAuth();
     await vi.waitFor(() => expect(useAuth.getState().member?.id).toBe(a));
-    const old = deferred<IdentityResponse>();
-    sdk.getUser.mockReturnValueOnce(old.promise);
+    const old = deferred<Identity | null>();
+    sdk.getVerifiedUser.mockReturnValueOnce(old.promise);
     const refresh = useAuth.getState().refresh();
     sdk.listener.current?.("SIGNED_OUT", null);
     old.resolve(user(a));
@@ -163,7 +162,7 @@ describe("會員狀態與實際本機工作空間切換", () => {
   });
   it("驗證失敗顯示錯誤並回到訪客空間，不使用未驗證的會員 ID", async () => {
     await getDatabase("guest").notes.put(note("guest"));
-    sdk.getUser.mockRejectedValue(new Error("network unavailable"));
+    sdk.getVerifiedUser.mockRejectedValue(new Error("network unavailable"));
     stop = startAuth();
     await vi.waitFor(() =>
       expect(useAuth.getState().status).toBe("unavailable"),
@@ -171,6 +170,18 @@ describe("會員狀態與實際本機工作空間切換", () => {
     await useWorkspace.getState().switchScope("guest");
     expect(useAuth.getState().member).toBeNull();
     expect(useWorkspace.getState().notes[0]?.body).toBe("guest");
+  });
+  it("未驗證信箱不能載入會員資料", async () => {
+    sdk.getVerifiedUser.mockResolvedValue({
+      ...user(a),
+      email_confirmed_at: undefined,
+    });
+    stop = startAuth();
+    await vi.waitFor(() =>
+      expect(useAuth.getState().status).toBe("unavailable"),
+    );
+    expect(useAuth.getState().member).toBeNull();
+    expect(useWorkspace.getState().scope).toBe("guest");
   });
   it("舊 IndexedDB 載入晚到，也不會覆蓋新帳號空間", async () => {
     const old = deferred<Backup>();

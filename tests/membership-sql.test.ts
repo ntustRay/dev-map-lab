@@ -18,19 +18,21 @@ const payload = {
 beforeAll(async () => {
   db = new PGlite();
   await db.exec(`
-    create role anon nologin;
+    create role anonymous nologin;
     create role authenticated nologin;
     create schema auth;
-    create table auth.users (id uuid primary key);
+    create schema neon_auth;
+    create table neon_auth."user" (id uuid primary key);
     create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
-    grant usage on schema public, auth to anon, authenticated;
-    grant execute on function auth.uid() to anon, authenticated;
+    create function auth.jwt() returns jsonb language sql stable as $$ select coalesce(nullif(current_setting('request.jwt.claims', true), ''), '{}')::jsonb $$;
+    grant usage on schema public to anonymous, authenticated;
+    grant execute on function auth.uid(), auth.jwt() to anonymous, authenticated;
   `);
-  await db.query("insert into auth.users (id) values ($1), ($2)", [
+  await db.query('insert into neon_auth."user" (id) values ($1), ($2)', [
     ownerA,
     ownerB,
   ]);
-  const directory = path.join(process.cwd(), "supabase/migrations");
+  const directory = path.join(process.cwd(), "database/migrations");
   for (const file of (await readdir(directory))
     .filter((file) => file.endsWith(".sql"))
     .sort())
@@ -43,11 +45,19 @@ afterAll(async () => {
 async function asUser<T>(
   owner: string,
   work: (tx: Parameters<Parameters<PGlite["transaction"]>[0]>[0]) => Promise<T>,
+  verified = true,
 ) {
   return db.transaction(async (tx) => {
     await tx.exec("set local role authenticated");
     await tx.query("select set_config('request.jwt.claim.sub', $1, true)", [
       owner,
+    ]);
+    await tx.query("select set_config('request.jwt.claims', $1, true)", [
+      JSON.stringify({
+        sub: owner,
+        emailVerified: verified,
+        user_metadata: { emailVerified: true },
+      }),
     ]);
     return work(tx);
   });
@@ -61,9 +71,10 @@ describe("Postgres 真實資料操作：RLS 與備份版本", () => {
     expect(tables.rows).toHaveLength(2);
     expect(tables.rows.every((row) => row.relrowsecurity)).toBe(true);
     const functions = await db.query<{ prosecdef: boolean }>(
-      "select prosecdef from pg_proc where proname = 'devmap_save_workspace'",
+      "select prosecdef from pg_proc where proname in ('devmap_save_workspace','devmap_current_user_id')",
     );
-    expect(functions.rows[0]?.prosecdef).toBe(false);
+    expect(functions.rows).toHaveLength(2);
+    expect(functions.rows.every((row) => !row.prosecdef)).toBe(true);
   });
   it("A、B 只能讀自己的 profile", async () => {
     await asUser(ownerA, (tx) =>
@@ -91,6 +102,41 @@ describe("Postgres 真實資料操作：RLS 與備份版本", () => {
     expect(a.rows).toEqual([{ display_name: "Alice" }]);
     expect(b.rows).toEqual([{ display_name: "Bob" }]);
   });
+  it("未驗證信箱即使有有效身分，也不能讀寫自己的資料或以 metadata 冒充驗證", async () => {
+    const read = await asUser(
+      ownerA,
+      (tx) => tx.query("select * from public.devmap_profiles"),
+      false,
+    );
+    expect(read.rows).toHaveLength(0);
+    await expect(
+      asUser(
+        ownerA,
+        (tx) =>
+          tx.query("select * from public.devmap_save_workspace($1,0,$2)", [
+            ownerA,
+            payload,
+          ]),
+        false,
+      ),
+    ).rejects.toMatchObject({ code: "42501" });
+    const profile = await asUser(
+      ownerA,
+      (tx) =>
+        tx.query(
+          "update public.devmap_profiles set display_name = 'forbidden' returning *",
+        ),
+      false,
+    );
+    expect(profile.rows).toHaveLength(0);
+  });
+  it("會員無法讀取私有 migration ledger", async () => {
+    await expect(
+      asUser(ownerA, (tx) =>
+        tx.query("select * from devmap_internal.schema_migrations"),
+      ),
+    ).rejects.toMatchObject({ code: "42501" });
+  });
   it("不能把自己的 profile 改成其他人的 user_id", async () => {
     await expect(
       asUser(ownerA, (tx) =>
@@ -104,13 +150,13 @@ describe("Postgres 真實資料操作：RLS 與備份版本", () => {
   it("未登入無法讀 profile 或呼叫保存 RPC", async () => {
     await expect(
       db.transaction(async (tx) => {
-        await tx.exec("set local role anon");
+        await tx.exec("set local role anonymous");
         return tx.query("select * from public.devmap_profiles");
       }),
     ).rejects.toMatchObject({ code: "42501" });
     await expect(
       db.transaction(async (tx) => {
-        await tx.exec("set local role anon");
+        await tx.exec("set local role anonymous");
         return tx.query("select * from public.devmap_save_workspace($1,0,$2)", [
           ownerA,
           payload,

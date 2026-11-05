@@ -2106,9 +2106,6 @@ summary {
   margin-top: 5px;
   flex-shrink: 0;
 }
-.recovery-card {
-  max-width: 560px;
-}
 @media (max-width: 960px) {
   .account-layout {
     grid-template-columns: minmax(0, 1fr);

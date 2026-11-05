@@ -2,11 +2,10 @@
 
 import { create } from "zustand";
 import { useWorkspace } from "../storage/workspace";
-import { getSupabaseClient } from "./client";
+import { getMemberClient, getVerifiedUser } from "./client";
 import { getAuthConfiguration } from "./config";
-import { authErrorMessage } from "./errors";
+import { authErrorMessage, MemberOperationError } from "./errors";
 import { accountScope, type Member, memberFromUser } from "./identity";
-import { forgetRecovery, hasRecovery, rememberRecovery } from "./recovery";
 
 type AuthState = {
   status:
@@ -17,7 +16,6 @@ type AuthState = {
     | "unavailable";
   member: Member | null;
   error: string | null;
-  recovery: boolean;
   refresh: () => Promise<void>;
 };
 let generation = 0;
@@ -26,37 +24,34 @@ export const useAuth = create<AuthState>((set) => ({
   status: "checking",
   member: null,
   error: null,
-  recovery: false,
   refresh: async () => {
     const request = ++generation;
     const config = getAuthConfiguration();
-    const client = getSupabaseClient();
+    const client = getMemberClient();
     if (!client || config.status !== "ready") {
       set({
         status: "disabled",
         member: null,
         error: config.status === "invalid" ? config.reason : null,
-        recovery: false,
       });
       await useWorkspace.getState().switchScope("guest");
       return;
     }
     try {
-      const { data, error } = await client.auth.getUser();
+      const user = await getVerifiedUser();
       if (request !== generation) return;
-      if (error && error.name !== "AuthSessionMissingError") throw error;
-      if (!data.user) {
-        forgetRecovery();
+      if (!user) {
         set({
           status: "signed-out",
           member: null,
           error: null,
-          recovery: false,
         });
         await useWorkspace.getState().switchScope("guest");
         return;
       }
-      const member = memberFromUser(data.user);
+      if (!user.email_confirmed_at)
+        throw new MemberOperationError("請先完成 Email 驗證，再使用會員資料。");
+      const member = memberFromUser(user);
       await useWorkspace
         .getState()
         .switchScope(accountScope(config.value.projectNamespace, member.id));
@@ -65,7 +60,6 @@ export const useAuth = create<AuthState>((set) => ({
           status: "authenticated",
           member,
           error: null,
-          recovery: hasRecovery(member.id),
         });
     } catch (error) {
       if (request !== generation) return;
@@ -73,7 +67,6 @@ export const useAuth = create<AuthState>((set) => ({
         status: "unavailable",
         member: null,
         error: authErrorMessage(error),
-        recovery: false,
       });
       await useWorkspace.getState().switchScope("guest");
     }
@@ -81,7 +74,7 @@ export const useAuth = create<AuthState>((set) => ({
 }));
 
 export function startAuth(): () => void {
-  const client = getSupabaseClient();
+  const client = getMemberClient();
   const timers = new Set<ReturnType<typeof setTimeout>>();
   if (!client) {
     void useAuth.getState().refresh();
@@ -92,29 +85,22 @@ export function startAuth(): () => void {
   const { data } = client.auth.onAuthStateChange((event, session) => {
     // Keep callbacks synchronous; profile/workspace calls run after the Auth callback has returned.
     if (event === "SIGNED_OUT") {
-      forgetRecovery();
       generation++;
       useAuth.setState({
         status: "signed-out",
         member: null,
         error: null,
-        recovery: false,
       });
       void useWorkspace.getState().switchScope("guest");
       return;
     }
-    // Invalidate an in-flight getUser immediately, before the deferred refresh.
+    // Invalidate an in-flight identity check before the deferred refresh.
     generation++;
-    if (event === "PASSWORD_RECOVERY" && session?.user) {
-      rememberRecovery(session.user.id);
-      useAuth.setState({ recovery: true });
-    }
     if (session?.user.id !== useAuth.getState().member?.id) {
       useWorkspace.getState().lock();
       useAuth.setState({
         status: "checking",
         member: null,
-        recovery: session?.user ? hasRecovery(session.user.id) : false,
       });
     }
     const timer = setTimeout(() => {

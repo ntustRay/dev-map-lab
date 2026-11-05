@@ -1,17 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { type FormEvent, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { ZodError } from "zod";
-import {
-  requestPasswordReset,
-  resendVerification,
-  signInEmail,
-  signInSocial,
-  signOutMember,
-  signUpEmail,
-  updateRecoveredPassword,
-} from "../auth/actions";
+import { signOutMember } from "../auth/actions";
 import {
   type CloudSnapshot,
   readCloudSnapshot,
@@ -26,6 +18,7 @@ import { useAuth } from "../auth/state";
 import { GuestImportError, getDatabase } from "../storage/database";
 import { downloadText, useWorkspace } from "../storage/workspace";
 import { Icon } from "./icons";
+import { AuthForms } from "./member-auth-forms";
 
 function message(error: unknown): string {
   if (error instanceof GuestImportError) return error.message;
@@ -38,7 +31,6 @@ export function AccountPanel() {
   const status = useAuth((state) => state.status);
   const member = useAuth((state) => state.member);
   const error = useAuth((state) => state.error);
-  const recovery = useAuth((state) => state.recovery);
   const config = getAuthConfiguration();
   return (
     <div className="page account-page">
@@ -76,15 +68,11 @@ export function AccountPanel() {
           </div>
         </div>
       ) : member ? (
-        recovery ? (
-          <RecoveryForm />
-        ) : (
-          <MemberAccount key={member.id} member={member} />
-        )
+        <MemberAccount key={member.id} member={member} />
       ) : (
         <>
           <div className="account-layout">
-            <AuthForms />{" "}
+            <AuthForms />
             <aside className="account-info">
               <h2>登入後的資料怎麼保存？</h2>
               <ul>
@@ -103,281 +91,6 @@ export function AccountPanel() {
         </>
       )}
     </div>
-  );
-}
-
-function AuthForms() {
-  const [mode, setMode] = useState<"signin" | "signup" | "forgot" | "resend">(
-    "signin",
-  );
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [confirmation, setConfirmation] = useState("");
-  const [displayName, setDisplayName] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [notice, setNotice] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const config = getAuthConfiguration();
-  function changeMode(next: typeof mode) {
-    setMode(next);
-    setPassword("");
-    setConfirmation("");
-    setError(null);
-    setNotice(null);
-  }
-  async function submit(event: FormEvent) {
-    event.preventDefault();
-    setBusy(true);
-    setError(null);
-    setNotice(null);
-    try {
-      if (mode === "signin") await signInEmail(email, password);
-      else if (mode === "signup") {
-        if (password !== confirmation)
-          throw new MemberOperationError("兩次密碼不一致。");
-        const signedIn = await signUpEmail(email, password, displayName);
-        if (!signedIn) {
-          setNotice(
-            "請查看信箱，開啟確認信完成驗證。請使用發起註冊的同一個瀏覽器開啟連結。",
-          );
-          setPassword("");
-          setConfirmation("");
-        }
-      } else if (mode === "forgot") {
-        await requestPasswordReset(email);
-        setNotice(
-          "如果這個信箱已註冊，會收到密碼重設信。請使用同一個瀏覽器開啟連結。",
-        );
-      } else {
-        await resendVerification(email);
-        setNotice("如果這個信箱需要驗證，會收到新的確認信。請稍後檢查收件匣。");
-      }
-    } catch (cause) {
-      setError(message(cause));
-    } finally {
-      setBusy(false);
-    }
-  }
-  const title =
-    mode === "signup"
-      ? "建立會員"
-      : mode === "forgot"
-        ? "忘記密碼"
-        : mode === "resend"
-          ? "重寄確認信"
-          : "登入會員";
-  return (
-    <section className="account-card">
-      <fieldset className="account-mode">
-        <legend className="sr-only">會員操作</legend>
-        <button
-          type="button"
-          disabled={busy}
-          className={mode === "signin" ? "selected" : ""}
-          aria-pressed={mode === "signin"}
-          onClick={() => changeMode("signin")}
-        >
-          登入
-        </button>
-        <button
-          type="button"
-          disabled={busy}
-          className={mode === "signup" ? "selected" : ""}
-          aria-pressed={mode === "signup"}
-          onClick={() => changeMode("signup")}
-        >
-          註冊
-        </button>
-      </fieldset>
-      <h2>{title}</h2>
-      <form className="account-form" onSubmit={(event) => void submit(event)}>
-        <label>
-          Email
-          <input
-            className="text-input"
-            type="email"
-            autoComplete="email"
-            required
-            maxLength={254}
-            value={email}
-            disabled={busy}
-            onChange={(event) => setEmail(event.target.value)}
-          />
-        </label>
-        {mode === "signup" ? (
-          <label>
-            顯示名稱（選填）
-            <input
-              className="text-input"
-              autoComplete="nickname"
-              maxLength={80}
-              value={displayName}
-              disabled={busy}
-              onChange={(event) => setDisplayName(event.target.value)}
-            />
-          </label>
-        ) : null}
-        {mode === "signin" || mode === "signup" ? (
-          <label>
-            密碼
-            <input
-              className="text-input"
-              type="password"
-              required
-              autoComplete={
-                mode === "signin" ? "current-password" : "new-password"
-              }
-              value={password}
-              disabled={busy}
-              maxLength={mode === "signin" ? 1000 : 72}
-              minLength={mode === "signup" ? 12 : 1}
-              onChange={(event) => setPassword(event.target.value)}
-            />
-            {mode === "signup" ? (
-              <span className="field-help">
-                至少 12 個字元；密碼 UTF-8 長度最多 72 bytes。
-              </span>
-            ) : null}
-          </label>
-        ) : null}
-        {mode === "signup" ? (
-          <label>
-            再次輸入密碼
-            <input
-              className="text-input"
-              type="password"
-              required
-              autoComplete="new-password"
-              maxLength={72}
-              value={confirmation}
-              disabled={busy}
-              onChange={(event) => setConfirmation(event.target.value)}
-            />
-          </label>
-        ) : null}
-        <button className="button primary" type="submit" disabled={busy}>
-          {busy ? "處理中…" : title}
-        </button>
-      </form>
-      <div className="auth-secondary-actions">
-        <button
-          className="text-button"
-          type="button"
-          disabled={busy}
-          onClick={() => changeMode("forgot")}
-        >
-          忘記密碼
-        </button>
-        <button
-          className="text-button"
-          type="button"
-          disabled={busy}
-          onClick={() => changeMode("resend")}
-        >
-          重寄確認信
-        </button>
-      </div>
-      {config.status === "ready" && config.value.providers.length ? (
-        <div className="social-signin">
-          <p>或使用其他帳號</p>
-          {config.value.providers.map((provider) => (
-            <button
-              className="button secondary"
-              key={provider}
-              type="button"
-              disabled={busy}
-              onClick={() => {
-                setBusy(true);
-                void signInSocial(provider).catch((cause) => {
-                  setError(message(cause));
-                  setBusy(false);
-                });
-              }}
-            >
-              使用 {provider === "github" ? "GitHub" : "Google"} 登入
-            </button>
-          ))}
-        </div>
-      ) : null}
-      {notice ? (
-        <p className="inline-notice" role="status">
-          {notice}
-        </p>
-      ) : null}
-      {error ? (
-        <p className="inline-error" role="alert">
-          {error}
-        </p>
-      ) : null}
-    </section>
-  );
-}
-
-function RecoveryForm() {
-  const [password, setPassword] = useState("");
-  const [confirmation, setConfirmation] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  return (
-    <section className="account-card recovery-card">
-      <h2>設定新密碼</h2>
-      <p>更新完成後，請使用新密碼重新登入。</p>
-      <form
-        className="account-form"
-        onSubmit={(event) => {
-          event.preventDefault();
-          setBusy(true);
-          setError(null);
-          void (async () => {
-            try {
-              if (password !== confirmation)
-                throw new MemberOperationError("兩次密碼不一致。");
-              await updateRecoveredPassword(password);
-            } catch (cause) {
-              setError(message(cause));
-            } finally {
-              setBusy(false);
-            }
-          })();
-        }}
-      >
-        <label>
-          新密碼
-          <input
-            className="text-input"
-            type="password"
-            autoComplete="new-password"
-            required
-            minLength={12}
-            maxLength={72}
-            value={password}
-            disabled={busy}
-            onChange={(event) => setPassword(event.target.value)}
-          />
-        </label>
-        <label>
-          再次輸入新密碼
-          <input
-            className="text-input"
-            type="password"
-            autoComplete="new-password"
-            required
-            maxLength={72}
-            value={confirmation}
-            disabled={busy}
-            onChange={(event) => setConfirmation(event.target.value)}
-          />
-        </label>
-        <button className="button primary" type="submit" disabled={busy}>
-          {busy ? "更新中…" : "更新密碼並登出"}
-        </button>
-      </form>
-      {error ? (
-        <p className="inline-error" role="alert">
-          {error}
-        </p>
-      ) : null}
-    </section>
   );
 }
 

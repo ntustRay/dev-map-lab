@@ -19,6 +19,8 @@ jobs:
     timeout-minutes: 15
     env:
       NEXT_TELEMETRY_DISABLED: "1"
+      # Public endpoint only. Auth and PostgreSQL RLS enforce data access.
+      NEXT_PUBLIC_NEON_DATABASE_URL: https://ep-billowing-moon-bd20lbox.c-8.us-east-2.aws.neon.tech/neondb
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

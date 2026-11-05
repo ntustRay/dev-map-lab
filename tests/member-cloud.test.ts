@@ -2,13 +2,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Backup } from "../src/storage/schema";
 
 const sdk = vi.hoisted(() => ({
-  getUser: vi.fn(),
+  getVerifiedUser: vi.fn(),
   rpc: vi.fn(),
   maybeSingle: vi.fn(),
 }));
 vi.mock("../src/auth/client", () => ({
-  requireSupabaseClient: () => ({
-    auth: { getUser: sdk.getUser },
+  getVerifiedUser: sdk.getVerifiedUser,
+  requireMemberClient: () => ({
     rpc: sdk.rpc,
     from: () => ({
       select: () => ({ eq: () => ({ maybeSingle: sdk.maybeSingle }) }),
@@ -34,15 +34,21 @@ const backup: Backup = {
 };
 beforeEach(() => {
   vi.clearAllMocks();
-  sdk.getUser.mockResolvedValue({ data: { user: { id: a } }, error: null });
+  sdk.getVerifiedUser.mockResolvedValue({
+    id: a,
+    email_confirmed_at: "2026-11-05T00:00:00Z",
+  });
   sdk.rpc.mockResolvedValue({
     data: [{ new_revision: 2, saved_at: "2026-11-03T00:00:00+00:00" }],
     error: null,
   });
 });
-describe("Supabase SDK 邊界：帳號、payload 與 RPC 收據", () => {
+describe("Neon SDK 邊界：帳號、payload 與 RPC 收據", () => {
   it("先驗證身分，帳號不同時不讀寫雲端", async () => {
-    sdk.getUser.mockResolvedValue({ data: { user: { id: b } }, error: null });
+    sdk.getVerifiedUser.mockResolvedValue({
+      id: b,
+      email_confirmed_at: "2026-11-05T00:00:00Z",
+    });
     await expect(saveCloudSnapshot(a, 1, backup)).rejects.toThrow("帳號已切換");
     await expect(readCloudSnapshot(a)).rejects.toThrow("帳號已切換");
     expect(sdk.rpc).not.toHaveBeenCalled();
@@ -98,6 +104,6 @@ describe("Supabase SDK 邊界：帳號、payload 與 RPC 收據", () => {
     };
     expect(() => validateCloudBackup(large)).toThrow("5 MB");
     await expect(saveCloudSnapshot(a, 0, large)).rejects.toThrow("5 MB");
-    expect(sdk.getUser).not.toHaveBeenCalled();
+    expect(sdk.getVerifiedUser).not.toHaveBeenCalled();
   });
 });

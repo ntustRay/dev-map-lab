@@ -20,7 +20,7 @@
     "@codemirror/state": "^6.5.2",
     "@codemirror/view": "^6.38.6",
     "@jitl/quickjs-singlefile-browser-release-sync": "0.32.0",
-    "@supabase/supabase-js": "2.118.0",
+    "@neon/neon-js": "0.10.2",
     "codemirror": "6.0.2",
     "dexie": "^4.2.1",
     "gray-matter": "4.0.3",

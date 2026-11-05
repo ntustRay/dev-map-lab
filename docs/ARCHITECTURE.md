@@ -1,6 +1,6 @@
 # 架構
 
-採靜態網站與本機優先的資料模型：GitHub 保存教材與程式，Build 時驗證內容並產生頁面；瀏覽器負責作答、筆記與練習程式執行。本機功能不需要 API key；可選的會員與備份透過 Supabase SDK 接入。
+採靜態網站與本機優先的資料模型：GitHub 保存教材與程式，Build 時驗證內容並產生頁面；瀏覽器負責作答、筆記與練習程式執行。本機功能不需要 API key；可選的會員與備份透過 Neon SDK 接入。
 
 ```mermaid
 flowchart TD
@@ -21,17 +21,17 @@ flowchart TD
 
 ## 目錄與責任
 
-| 目錄                  | 責任                                             |
-| --------------------- | ------------------------------------------------ |
-| `src/app`             | 靜態路由、metadata 與 layout                     |
-| `src/content`         | 讀取教材、驗證 ID、先修與題目規則                |
-| `src/core`            | 評分、輸出比對、anchor 與執行契約                |
-| `src/workers`         | 接收經 Zod 驗證的程式執行請求                    |
-| `src/storage`         | IndexedDB、資料版本、備份與工作區狀態            |
-| `src/auth`            | Auth SDK、PKCE、會員狀態、profile 與雲端備份邊界 |
-| `supabase/migrations` | 版本化表結構、RLS 與備份 CAS 函式                |
-| `src/components`      | 教材、題型、編輯器與筆記介面                     |
-| `tests`               | 執行器、評分、內容與資料庫操作測試               |
+| 目錄                  | 責任                                                  |
+| --------------------- | ----------------------------------------------------- |
+| `src/app`             | 靜態路由、metadata 與 layout                          |
+| `src/content`         | 讀取教材、驗證 ID、先修與題目規則                     |
+| `src/core`            | 評分、輸出比對、anchor 與執行契約                     |
+| `src/workers`         | 接收經 Zod 驗證的程式執行請求                         |
+| `src/storage`         | IndexedDB、資料版本、備份與工作區狀態                 |
+| `src/auth`            | Auth SDK、Email OTP、會員狀態、profile 與雲端備份邊界 |
+| `database/migrations` | 版本化表結構、RLS 與備份 CAS 函式                     |
+| `src/components`      | 教材、題型、編輯器與筆記介面                          |
+| `tests`               | 執行器、評分、內容與資料庫操作測試                    |
 
 ## 三個資料邊界
 
@@ -62,8 +62,8 @@ QuickJS 只接入有上限的 Console；不傳入 DOM、fetch、儲存、module 
 
 ```mermaid
 flowchart TD
-  ui["會員頁"] --> auth["Supabase Auth / PKCE"]
-  auth --> identity["getUser 驗證身分"]
+  ui["會員頁"] --> auth["Neon Auth / Email OTP"]
+  auth --> identity["重新查詢 server session"]
   identity --> local["該帳號的 IndexedDB"]
   ui --> adapter["雲端資料邊界"]
   local --> adapter
@@ -73,11 +73,11 @@ flowchart TD
   rpc --> snapshot["自己的單份備份"]
 ```
 
-前端只有 publishable key，沒有 service_role。Auth callback 採 PKCE，`next` 只接受站內路徑；一次性 code 會在交換前從網址列移除。重設密碼的短期標記只控制 UI，變更密碼仍須由 Auth 的有效 session 授權。
+前端僅設定公開的 Neon HTTPS database URL，不含資料庫密碼或 API key。Email 驗證與重設採 OTP；OAuth 由 Managed SDK 消費 verifier 後才清除 callback URL，`next` 只接受站內路徑。會員狀態與雲端操作都強制重新查詢 Auth session。
 
 雲端按 user_id 各保存一份 v1 backup，client 與 SQL 分別檢查格式與 5 MB 上限。已有備份時先合併；上傳透過 invoker RPC 做原子版本檢查，版本不符回報衝突。這一版沒有背景同步、刪除墓碑、跨裝置衝突副本或可信任成績，因此不把它視為完整同步協定。
 
-RLS 限制已登入者只能讀寫自己的資料，不能讀取其他 user_id。SDK 的預先 getUser 檢查改善錯誤回饋；真正的資料權限由 PostgreSQL 執行。RPC 額外比對 expected_user_id，避免送出前切換 session 時把舊帳號內容存入新帳號。
+RLS 限制已驗證信箱的登入者只能讀寫自己的資料；restrictive policy 檢查簽署 JWT 的 emailVerified，不能以 metadata 冒充。SDK 的預先 session 檢查改善錯誤回饋；真正的資料權限由 PostgreSQL 執行。RPC 額外比對 expected_user_id，避免送出前切換 session 時把舊帳號內容存入新帳號。
 
 ## 註記定位
 
@@ -87,7 +87,7 @@ RLS 限制已登入者只能讀寫自己的資料，不能讀取其他 user_id�
 
 ## 後續串接位置
 
-- Auth 啟用：選定獨立免費專案、設定 Email SMTP／callback，依 [會員指南](MEMBERSHIP.md) 做真實流程驗證。
+- Auth 啟用：已選定獨立 Neon 免費專案，完成控制台驗證要求與 Email SMTP／trusted domains，依 [會員指南](MEMBERSHIP.md) 做真實流程驗證。
 - Sync：在現有手動備份邊界增加操作紀錄、刪除墓碑、衝突副本與重試佇列，不讓頁面直接操作雲端資料表。
 - 離線模型：實作 `SemanticEvaluator`，再用人工標註集校準每題門檻，最後於 Worker 接入。
 - 正式部署：使用目前 static export；要增加 Server Actions 或可信任 Judge，先調整架構與成本條件。

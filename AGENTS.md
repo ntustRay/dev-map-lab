@@ -3,7 +3,7 @@
 ## Project & Repository
 
 程式與架構學習工作台。Next.js App Router、React、TypeScript，採 static export。
-使用者已授權優先實作會員與相關服務。會員採 Supabase Auth、帳號各自的 IndexedDB 空間與手動雲端備份；實際啟用狀態見 `docs/MEMBERSHIP.md`。自動同步、模型下載與正式公開部署另行處理。
+使用者已授權優先實作會員與相關服務，選用獨立 Neon 專案。會員採 Managed Better Auth、Neon Data API、帳號各自的 IndexedDB 空間與手動雲端備份；實際啟用狀態見 `docs/MEMBERSHIP.md`。自動同步、模型下載與正式公開部署另行處理。
 
 ## Setup & Commands
 
@@ -22,10 +22,10 @@
 - 不向 guest 暴露 DOM、網路、儲存空間或憑證。不得用關鍵詞黑名單冒充隔離。
 - 簡答文字規準與語意評分必須明確區分；cosine similarity 不是正確率。
 - 本機狀態不可在 SSR 讀取；IndexedDB 初始化與錯誤需有明確狀態。
-- 會員身分用 Supabase `getUser()` 驗證；不得以可自行修改的 metadata 作角色授權。
+- 會員身分以 Neon SDK 強制重新查詢 server session 驗證；拒絕未驗證信箱。不得以可自行修改的 metadata 作角色授權。
 - 切換帳號立即清空畫面狀態，舊的非同步工作不可寫入新帳號。訪客資料只經明確操作匯入。
-- 所有公開 schema 的會員表啟用 RLS；更新 policy 同時有 USING 與 WITH CHECK。RPC 使用 invoker，保存時驗證預期帳號與 revision。
-- 真實資料庫修改使用 versioned migration；不得任意共用、停用或修改其他應用的 Supabase 專案。
+- 所有公開 schema 的會員表啟用 RLS，另以 restrictive policy 檢查 signed JWT 的 emailVerified；更新 policy 同時有 USING 與 WITH CHECK。RPC 使用 invoker，保存時驗證預期帳號與 revision。
+- 真實資料庫修改使用 `database/migrations` 的 versioned migration，先在開發分支驗證；不得任意共用、停用或修改其他應用的雲端專案。
 - 新增 code 題時，JS／TS 參考解法都必須真的執行過全部測資。
 
 ## Restricted Files

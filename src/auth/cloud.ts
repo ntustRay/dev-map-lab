@@ -3,7 +3,7 @@
 import { z } from "zod";
 import { jsonValueSchema } from "../core/content-schema";
 import { type Backup, backupSchema } from "../storage/schema";
-import { requireSupabaseClient } from "./client";
+import { getVerifiedUser, requireMemberClient } from "./client";
 import { displayNameSchema } from "./config";
 import { MemberOperationError } from "./errors";
 
@@ -25,10 +25,9 @@ const receiptSchema = z
   .length(1);
 
 async function verifyOwner(ownerId: string) {
-  const client = requireSupabaseClient();
-  const { data, error } = await client.auth.getUser();
-  if (error) throw error;
-  if (!data.user || data.user.id !== ownerId)
+  const client = requireMemberClient();
+  const user = await getVerifiedUser();
+  if (!user || user.id !== ownerId || !user.email_confirmed_at)
     throw new MemberOperationError("帳號已切換，請在目前帳號重新操作。");
   return client;
 }

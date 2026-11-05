@@ -1,84 +1,89 @@
 # 會員與雲端備份
 
-會員程式已實作，線上後端尚未啟用。未設定環境變數時仍可正常使用訪客教材、練習與筆記，會員頁會顯示尚未啟用。
+本專案改接使用者建立的獨立 Neon 免費專案 `dev-map-lab`，不共用其他應用的會員或資料庫。網站仍採 static export；GitHub Actions 只產生 build artifact，沒有公開部署。
 
-## 本次範圍與目前阻擋
+## 目前狀態
 
-- Email 註冊、確認信、重寄確認信、登入、此裝置登出、忘記密碼與設定新密碼。
-- 可選的 GitHub／Google OAuth 登入。
-- 訪客、不同會員與不同 Supabase 專案各自的本機空間。
-- 顯示名稱、明確的訪客匯入、手動雲端備份與備份合併。
-- 版本化 SQL migration、RLS、預期帳號及 revision 衝突檢查。
+| 部分         | 狀態                                                                                                 |
+| ------------ | ---------------------------------------------------------------------------------------------------- |
+| Neon 專案    | `spring-heart-24139390`，AWS us-east-2，免費方案                                                     |
+| 正式資料庫   | `production`；Auth、Data API、兩份 migration 已配置並驗證 RLS                                    |
+| 測試資料庫   | `dev-member-integration`，獨立 branch；測試帳號與備份不進正式資料庫                                  |
+| 會員程式     | Email 註冊、6 位數 OTP 驗證、登入／登出、OTP 忘記密碼                                                |
+| 本機與雲端   | 每帳號的 IndexedDB、顯示名稱、明確訪客匯入、手動備份與合併                                           |
+| 信箱驗證設定 | 控制台的 Require email verification 尚待啟用；前端與 PostgreSQL 都已強制拒絕未驗證信箱的會員資料存取 |
+| 寄信服務     | Neon shared SMTP 僅供開發；實際收信尚未驗證，正式公開前另設 custom SMTP                              |
+| OAuth        | GitHub／Google 程式保留，前端預設關閉；未宣稱已驗證                                                  |
 
-2026-11-04 再次檢查時，MingRay Org 的兩個免費 Supabase 專案用於 `visual-regression-hub` 與 `engineer-stock-web`，沒有 Dev Map Lab 專用專案。本次未修改這兩個應用，也未停用專案、建立付費資源或複製它們的憑證。
+未設定環境變數時仍能使用訪客教材、題目與本機筆記。免費方案有用量限制，不保證不限流量或永久不變；沒有啟用付費資源。
 
-預設方案是獨立專案，讓會員與寄信設定可以獨立管理。啟用前需選定可用的免費專案，或另行架設 Supabase。若決定共用既有專案，必須先確認：Auth 使用者池、密碼與 Auth 設定會共用；表名稱不同不能隔離 Auth。不能只因免費額度已滿就自行改用其他應用的後端。
+## 本機連線
 
-## 啟用步驟
-
-### 1. 選定後端並套用 migration
-
-在選定的 Supabase 專案，先檢查既有資料表，確定沒有同名資源，再以 migration 工具套用：
-
-[`supabase/migrations/20261103142006_member_workspace.sql`](../supabase/migrations/20261103142006_member_workspace.sql)
-
-也可在該專案的 SQL Editor 執行這份檔案一次。後續異動應新增 migration，避免重跑已存在的建表 SQL。
-
-Migration 建立：
-
-| 資源                    | 用途                                 | 權限                                                    |
-| ----------------------- | ------------------------------------ | ------------------------------------------------------- |
-| `devmap_profiles`       | user_id、顯示名稱、更新時間          | 會員僅讀寫自己的列                                      |
-| `devmap_workspaces`     | user_id、revision、v1 備份、更新時間 | 會員僅讀寫自己的列                                      |
-| `devmap_save_workspace` | 原子保存與版本檢查                   | authenticated、security invoker；比對實際身分與預期帳號 |
-
-兩張表都參照 `auth.users`，啟用 RLS；匿名使用者沒有表或 RPC 的執行權限。前端不會拿到 service_role。資料庫中的備份不是正式考試成績，也不應用來授予管理權限。
-
-### 2. 設定 Auth callback
-
-在 Supabase Auth 的 URL Configuration 設定 Site URL，並加入允許的 Redirect URL。
-
-| 環境     | Site URL 範例             | Redirect URL 範例                      |
-| -------- | ------------------------- | -------------------------------------- |
-| 本機開發 | `http://localhost:3000`   | `http://localhost:3000/auth/callback/` |
-| 正式網站 | 選定後的實際 HTTPS origin | 該 origin 的 `/auth/callback/`         |
-
-不要把範例網域直接當正式設定。正式 callback 使用明確網址；預覽環境有需要時再加入。Email 與 OAuth 都回到同一 callback，`next` 只接受站內路徑。
-
-使用 PKCE：發起註冊／重設的瀏覽器保存驗證資料，因此確認信應在同一瀏覽器開啟。過期、缺少 code、OAuth 錯誤與缺少 PKCE 狀態會顯示錯誤，不會顯示假登入成功。SDK 支援 callback 的 `sb_flow_id`。
-
-### 3. 啟用 Email 與寄信
-
-保留 Email confirmation；正式開放註冊前設定並驗證 custom SMTP。Supabase 內建寄信只適用有限的測試收件人與額度，不能把「管理者信箱收得到」當作公開註冊已完成。
-
-SMTP host、port、sender、username 與 password 設定在 Supabase 的伺服器端；不要寫進 `NEXT_PUBLIC_*`、本 repo 或聊天內容。選用寄信服務時另外確認當下免費額度與寄件者要求。未選定寄信服務之前，不假設特定供應商一定免費或一定可寄信。
-
-本機流程的密碼至少 12 個字元，UTF-8 最多 72 bytes。Supabase 後台應設定相容的密碼政策；若後端要求更嚴格，以後端驗證為準。
-
-### 4. 設定前端環境變數
-
-複製 `.env.example` 為 `.env.local`，填入**選定專案**的 URL 與 publishable key：
+複製 `.env.example` 為 `.env.local`：
 
 ```dotenv
-NEXT_PUBLIC_SUPABASE_URL=https://YOUR_PROJECT_REF.supabase.co
-NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=sb_publishable_REPLACE_ME
+NEXT_PUBLIC_NEON_DATABASE_URL=https://ep-billowing-moon-bd20lbox.c-8.us-east-2.aws.neon.tech/neondb
 NEXT_PUBLIC_AUTH_GITHUB_ENABLED=false
 NEXT_PUBLIC_AUTH_GOOGLE_ENABLED=false
 ```
 
-這些值會出現在靜態前端 bundle。URL 與 publishable key 是公開設定；RLS 負責資料權限。程式拒絕 secret key、service_role 與舊式 JWT key，請由專案取得新的 publishable key。
+這是可公開的 **HTTPS database URL**；不能填 `postgresql://user:password@...`、API key 或資料庫密碼。SDK 由這個 URL 推導 Auth 與 Data API；前端不需要資料庫帳密。
 
 ```bash
+bun install --frozen-lockfile
 bun run dev
 ```
 
-正式 static export 會在 build 時固定 `NEXT_PUBLIC_*`，設定變更後必須重新 build；只改執行環境不會更新既有 `out/`。
+`NEXT_PUBLIC_*` 會在靜態 build 時固定，變更後須重新 build。CI 已配置相同公開 endpoint，沒有部署網站。
 
-### 5. 可選的社群登入
+測試時可將 HTTPS database URL 改成開發 branch 的：
 
-要開啟 GitHub 或 Google 登入，先依 Supabase 的 provider 指南建立 OAuth app，將 client ID／secret 設在 Supabase，再將該 provider 的前端旗標改為 `true`。
+```text
+https://ep-winter-dream-bdvu662b.c-8.us-east-2.aws.neon.tech/neondb
+```
 
-Provider 的 OAuth callback 指向 Supabase 提供的 `/auth/v1/callback`；Supabase 完成後再導向本網站的 `/auth/callback/`。這兩個 callback 不能混用。沒有設定 provider 時保留 `false`，不顯示無法使用的登入按鈕。
+本機資料空間包含 endpoint、database 與 user UUID；切換測試／正式環境不會混用會員筆記。訪客資料維持原 DB。
+
+## Auth 設定與使用流程
+
+### 完成信箱驗證設定
+
+Neon Console → `dev-map-lab` → 選 `production` branch → Settings → Better Auth：
+
+1. 啟用 Email／Password 的 **Require email verification**。
+2. 保留 **verification codes / OTP**；shared SMTP 不支援 verification links。
+3. 建議啟用重設密碼後撤銷其他 sessions（若控制台提供此選項）。
+
+此設定目前無法透過已連接的 Neon MCP 更新，且控制台需要登入。即使尚未切換，應用的 restrictive RLS 仍檢查服務簽署 JWT 的 `emailVerified = true`，未驗證帳號不能讀寫會員資料。這個欄位不是前端可編輯的 metadata。
+
+註冊時使用 native Managed SDK，避免相容 adapter 在等待驗證時錯誤要求立即取得 session。如果控制台尚未要求驗證而回傳 session，程式會主動寄 OTP，仍不開放會員資料。驗證完成後重新向 Auth 查詢 session；未自動登入時回到密碼登入。
+
+忘記密碼採「Email → 收 OTP → 輸入 OTP 與新密碼 → 此裝置登出 → 新密碼登入」。重設權限由 Auth 檢查 OTP，不由 query string 或本機標記決定。應用要求密碼至少 12 字元、UTF-8 最多 72 bytes；服務端政策更嚴格時以服務端為準。
+
+### 正式開放前的服務設定
+
+- 在 Better Auth 的 trusted domains 加入實際網站 origin；目前僅使用內建 localhost 開發許可，未加入虛構正式網域。
+- 公開環境與開發環境宜分開管理 trusted domains；正式環境確認不需要 localhost 後關閉該許可。
+- 設定並驗證 custom SMTP。shared SMTP 的 OTP 與 password reset 適用開發，不能以 API 回傳成功代替實際收信測試。
+- SMTP 帳密、OAuth client secret 只放 Neon 後端，不放 repo、`NEXT_PUBLIC_*` 或聊天。
+- 如需 Google／GitHub，先設定自己的 OAuth app 與 Neon 提供的 provider callback，再開啟對應旗標。網站 callback 是 `/auth/callback/`；SDK 處理 Neon session verifier，完成後才移除網址中的驗證參數。
+
+## 資料庫與 migration
+
+使用 `database/migrations`，按檔名依序執行一次。先在開發 branch 測試，再套用正式 branch；不要重跑已存在的建表語句。
+
+| 資源                                | 用途                        | 權限                                                         |
+| ----------------------------------- | --------------------------- | ------------------------------------------------------------ |
+| `public.devmap_profiles`            | 顯示名稱                    | authenticated、已驗證信箱、只能自己的列                      |
+| `public.devmap_workspaces`          | 最新一份 v1 備份與 revision | 相同 RLS；JSON 格式與 5 MB 限制                              |
+| `public.devmap_save_workspace`      | 原子保存與 CAS              | security invoker；比對實際 user ID、預期 user ID 與 revision |
+| `devmap_internal.schema_migrations` | 已套用版本                  | 不對 Data API 暴露；會員及匿名均無存取權                     |
+
+應用表參照 `neon_auth."user"(id)`。Managed Auth 的 user ID 是 UUID，policy 使用 `auth.uid()`；驗證狀態讀取 `auth.jwt()`。Neon 管理 Auth schema 的 ACL；RPC 透過在建立時綁定 `auth.uid()` 的 SQL helper 取得身分，所有函式仍使用 invoker，不授予讀取 Managed Auth 使用者表的權限。
+
+Data API 僅暴露 `public`，關閉自動 grants，由 migration 明確配置應用表的 SELECT／INSERT／UPDATE 與 RPC EXECUTE。匿名沒有表／RPC 權限，會員沒有 DELETE／TRUNCATE 或修改 policy 的權限。RLS 是真正的資料授權，前端預先驗證改善錯誤回饋。
+
+保留 typed PostgREST 呼叫，以 `@neon/neon-js/supabase` 相容 adapter 處理現有 `.from()`、`.rpc()`、登入與事件；它只連 Neon，沒有連 Supabase。OTP 使用同套 Managed SDK native client 的 `$fetch`，保留 SDK 的 cookie／verifier 與 token 行為，不自製 OAuth。
 
 ## 資料規則
 
@@ -111,36 +116,35 @@ Provider 的 OAuth callback 指向 Supabase 提供的 `/auth/v1/callback`；Supa
 
 這不是自動同步：沒有背景上傳、刪除墓碑、離線同步佇列或逐欄位衝突解決。合併也可能讓曾在單一裝置刪除、但仍存在另一份備份的資料再次出現。重要資料在合併前先匯出 JSON；同 ID 衝突採時間比較，無法識別兩台裝置的時鐘誤差或保留所有編輯版本。
 
-## 驗證與上線門檻
+## 驗證紀錄與待完成項目
 
-`bun run verify` 包含以下可離線測試的行為，沒有向實際會員寄信：
+`bun run verify` 涵蓋既有教材／QuickJS、fake-indexeddb 的實際 Dexie 交易、SDK 邊界，以及 PGlite 真實 PostgreSQL 執行 migration。測試包含：帳號切換競態、未驗證信箱拒絕、metadata 不能冒充驗證、RLS WITH CHECK、匿名拒絕、invoker RPC、revision 衝突、私有 migration ledger、格式與大小限制。
 
-- 既有教材、QuickJS runner、評分與資料庫測試。
-- fake-indexeddb 下的真實 Dexie 交易、帳號切換、過期讀取／待存寫入、訪客匯入與交易回復。
-- SDK 邊界的受控替身：驗證結果、登出事件、舊請求晚到、cloud owner／revision／回傳格式。
-- PGlite 真實 PostgreSQL 引擎：執行實際 migration，以不同角色與 JWT subject 驗證 SELECT、UPDATE、匿名拒絕、RLS WITH CHECK、invoker、版本衝突與大小限制。這不取代 GoTrue／PostgREST／SMTP 的線上驗證。
+PGlite 的 JWT helper 是測試替身；線上測試另外驗證 Neon 簽署的 JWT 與 Data API，不能把單元測試當成收信成功。
 
-完成專案與寄信設定後，仍須在實際網站驗證：
+2026-11-05 線上驗證結果：
 
-- [ ] 新信箱註冊 → 收確認信 → 同瀏覽器 callback → 登入成功。
-- [ ] 未驗證信箱不能直接登入；重寄確認信可用，過期 callback 正確報錯。
-- [ ] 忘記密碼 → 收信 → 設定新密碼 → 此裝置登出 → 新密碼可登入。
-- [ ] 重新整理、登出與兩個測試帳號切換，不出現別人的筆記或編輯內容。
-- [ ] 訪客不會自動匯入；明確匯入後原資料仍可匯出。
-- [ ] 兩個真實帳號透過前端與直接 API 均不能讀寫對方 profile／backup。
-- [ ] 第二裝置先合併再保存；兩個舊 revision 的保存只接受第一份。
-- [ ] 實際專案的 security／performance advisors 沒有本次資源造成的未解決問題。
-- [ ] 若啟用 OAuth，實際驗證該 provider；未啟用的不列為已完成。
+- 開發 branch 使用合成信箱與隨機密碼，實測 Managed Auth 註冊、登入、讀取 session 與登出，未寄信至真實使用者。
+- 加上驗證信箱的 restrictive policy 前，以兩個真實簽署 JWT 驗證 profile owner 隔離、WITH CHECK、備份 owner 檢查、首次保存、並發 CAS（一筆成功、一筆 40001）與 payload 拒絕。
+- 套用最終 restrictive policy 後，以官方 Neon SDK 再驗證兩個未驗證帳號：SELECT 回空、profile upsert／備份 RPC 回 42501；pre-bound identity helper 正常執行，無需提升權限。
+- 匿名 JWT 讀表回 403／42501；沒有 bearer token 的請求由 gateway 拒絕。未驗證信箱不是已完成會員登入的測試替代品。
+- 正式 branch 套用兩份 migration；與開發 branch schema diff 為空。兩張表都啟用 RLS、兩份 restrictive policy、兩個函式均 invoker；正式會員、profile 與備份皆為 0。
+- 本機 `bun run verify`：84 項測試、Biome、TypeScript、教材驗證與 production build 通過。
+- 本次瀏覽器預覽路由無法連線，因此沒有把新版表單的瀏覽器操作列為通過；實際收信與完整 UI 流程仍待驗證。
 
-目前尚未通過上述線上清單，不應對外宣稱會員已正式啟用。正式部署與公開網址另行處理。
+開發 branch 保留合成帳號與少量測試資料；正式資料庫沒有測試帳號。測試用密碼的暫存已移除。尚未驗證的項目：
+
+- [ ] 真實信箱註冊 → 收到 OTP → 驗證 → 前端登入成功。
+- [ ] 忘記密碼收 OTP → 重設 → 新密碼登入，舊 sessions 依服務設定撤銷。
+- [ ] 兩個已驗證信箱在前端與第二裝置完成備份／合併流程。
+- [ ] 正式 custom SMTP、網站 origin 與 OAuth（如需）驗證。
+- [ ] 正式網站部署；目前沒有公開網址。
 
 ## 官方參考
 
-- [Supabase Auth PKCE](https://supabase.com/docs/guides/auth/sessions/pkce-flow)
-- [SMTP 與寄信限制](https://supabase.com/docs/guides/auth/auth-smtp)
-- [Redirect URLs](https://supabase.com/docs/guides/auth/redirect-urls)
-- [Row Level Security](https://supabase.com/docs/guides/database/postgres/row-level-security)
-- [API keys](https://supabase.com/docs/guides/api/api-keys)
-- [GitHub OAuth](https://supabase.com/docs/guides/auth/social-login/auth-github)
-- [Google OAuth](https://supabase.com/docs/guides/auth/social-login/auth-google)
-- [Supabase 自行架設](https://supabase.com/docs/guides/self-hosting)
+- [Neon JavaScript SDK](https://neon.com/docs/reference/javascript-sdk)
+- [Email OTP](https://neon.com/docs/auth/guides/plugins/email-otp)
+- [Email verification](https://neon.com/docs/auth/guides/email-verification)
+- [Production checklist](https://neon.com/docs/auth/production-checklist)
+- [Data API access control](https://neon.com/docs/data-api/access-control)
+- [Row-Level Security](https://neon.com/docs/guides/row-level-security)

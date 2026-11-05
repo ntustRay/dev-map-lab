@@ -14,16 +14,21 @@ export function AuthCallback() {
     let active = true;
     if (!exchange.current) {
       const address = window.location.href;
-      // Remove the one-time code from the visible URL and future referrers before awaiting network.
-      window.history.replaceState(null, "", window.location.pathname);
+      // Neon's SDK must consume its OAuth verifier before we clear the callback URL.
       exchange.current = finishAuthCallback(address);
     }
     void exchange.current
       .then((next) => {
-        if (active) router.replace(next);
+        if (active) {
+          window.history.replaceState(null, "", window.location.pathname);
+          router.replace(next);
+        }
       })
       .catch((cause) => {
-        if (active) setError(authErrorMessage(cause));
+        if (active) {
+          window.history.replaceState(null, "", window.location.pathname);
+          setError(authErrorMessage(cause));
+        }
       });
     return () => {
       active = false;

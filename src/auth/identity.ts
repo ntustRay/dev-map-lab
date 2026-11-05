@@ -13,8 +13,8 @@ export function memberFromUser(user: {
   user_metadata: Record<string, unknown>;
 }): Member {
   const name =
-    typeof user.user_metadata.display_name === "string"
-      ? user.user_metadata.display_name.slice(0, 80)
+    typeof user.user_metadata.displayName === "string"
+      ? user.user_metadata.displayName.slice(0, 80)
       : "";
   return memberSchema.parse({
     id: user.id,

@@ -1,6 +1,6 @@
 import type { JsonValue } from "../core/content-schema";
 
-// Kept in sync with the checked-in SQL migration; regenerate from the dedicated project when linked.
+// Matches database/migrations; keep public table and RPC changes in sync.
 export type Database = {
   public: {
     Tables: {
@@ -29,6 +29,10 @@ export type Database = {
     };
     Views: Record<string, never>;
     Functions: {
+      devmap_current_user_id: {
+        Args: Record<string, never>;
+        Returns: string | null;
+      };
       devmap_save_workspace: {
         Args: {
           expected_user_id: string;

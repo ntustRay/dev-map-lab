@@ -1,12 +1,12 @@
--- Dedicated Dev Map Lab project. No existing app tables or Auth settings are modified.
+-- Dev Map Lab on Neon. Requires Managed Better Auth and Data API with default grants disabled.
 create table public.devmap_profiles (
-  user_id uuid primary key references auth.users(id) on delete cascade,
+  user_id uuid primary key references neon_auth."user"(id) on delete cascade,
   display_name text not null default '' check (char_length(display_name) <= 80),
   updated_at timestamptz not null default now()
 );
 
 create table public.devmap_workspaces (
-  user_id uuid primary key references auth.users(id) on delete cascade,
+  user_id uuid primary key references neon_auth."user"(id) on delete cascade,
   revision integer not null check (revision > 0),
   payload jsonb not null,
   updated_at timestamptz not null default now(),
@@ -26,7 +26,7 @@ create table public.devmap_workspaces (
 alter table public.devmap_profiles enable row level security;
 alter table public.devmap_workspaces enable row level security;
 
-revoke all on public.devmap_profiles, public.devmap_workspaces from public, anon;
+revoke all on public.devmap_profiles, public.devmap_workspaces from public, anonymous;
 grant select, insert, update on public.devmap_profiles, public.devmap_workspaces to authenticated;
 
 create policy "devmap_profile_select_own" on public.devmap_profiles for select to authenticated
@@ -80,5 +80,14 @@ begin
 end;
 $$;
 
-revoke execute on function public.devmap_save_workspace(uuid, integer, jsonb) from public, anon;
+revoke execute on function public.devmap_save_workspace(uuid, integer, jsonb) from public, anonymous;
 grant execute on function public.devmap_save_workspace(uuid, integer, jsonb) to authenticated;
+
+create schema if not exists devmap_internal;
+revoke all on schema devmap_internal from public, anonymous, authenticated;
+create table devmap_internal.schema_migrations (
+  version text primary key,
+  applied_at timestamptz not null default now()
+);
+revoke all on devmap_internal.schema_migrations from public, anonymous, authenticated;
+insert into devmap_internal.schema_migrations(version) values ('202611050001_member_workspace');

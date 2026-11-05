@@ -2,7 +2,6 @@ import { z } from "zod";
 
 export type AuthConfiguration = {
   url: string;
-  publishableKey: string;
   projectNamespace: string;
   providers: ("github" | "google")[];
 };
@@ -13,21 +12,14 @@ export type AuthConfigurationResult =
 
 export function parseAuthConfiguration(input: {
   url: string | undefined;
-  publishableKey: string | undefined;
   github: string | undefined;
   google: string | undefined;
 }): AuthConfigurationResult {
   const url = input.url?.trim() ?? "";
-  const key = input.publishableKey?.trim() ?? "";
-  if (!url && !key)
+  if (!url)
     return {
       status: "disabled",
       reason: "會員服務尚未啟用，仍可使用本機學習與筆記。",
-    };
-  if (!url || !key)
-    return {
-      status: "invalid",
-      reason: "會員服務設定不完整，請聯絡網站管理者。",
     };
   let address: URL;
   try {
@@ -35,26 +27,19 @@ export function parseAuthConfiguration(input: {
   } catch {
     return { status: "invalid", reason: "會員服務網址設定錯誤。" };
   }
-  const local = ["localhost", "127.0.0.1", "[::1]"].includes(address.hostname);
   if (
-    (address.protocol !== "https:" &&
-      !(local && address.protocol === "http:")) ||
+    address.protocol !== "https:" ||
     address.username ||
     address.password ||
     address.search ||
     address.hash ||
-    address.pathname !== "/"
+    !/^\/[a-zA-Z0-9_-]+\/?$/.test(address.pathname) ||
+    (!address.hostname.endsWith(".neon.tech") &&
+      !address.hostname.endsWith(".neon.build"))
   ) {
     return {
       status: "invalid",
-      reason: "會員服務需要 HTTPS；本機開發可使用 localhost HTTP。",
-    };
-  }
-  if (!/^sb_publishable_[A-Za-z0-9_-]+$/.test(key)) {
-    return {
-      status: "invalid",
-      reason:
-        "請設定 publishable key。secret key 與 service_role key 不可用於瀏覽器。",
+      reason: "請設定不含帳密的 Neon HTTPS database URL，並包含資料庫名稱。",
     };
   }
   const providers: AuthConfiguration["providers"] = [];
@@ -63,9 +48,12 @@ export function parseAuthConfiguration(input: {
   return {
     status: "ready",
     value: {
-      url: address.origin,
-      publishableKey: key,
-      projectNamespace: address.host.replace(/[^a-zA-Z0-9.-]/g, "-"),
+      url: `${address.origin}${address.pathname.replace(/\/$/, "")}`,
+      projectNamespace:
+        `${address.host}.${address.pathname.replace(/\/$/, "").slice(1)}`.replace(
+          /[^a-zA-Z0-9.-]/g,
+          "-",
+        ),
       providers,
     },
   };
@@ -73,8 +61,7 @@ export function parseAuthConfiguration(input: {
 
 export function getAuthConfiguration(): AuthConfigurationResult {
   return parseAuthConfiguration({
-    url: process.env.NEXT_PUBLIC_SUPABASE_URL,
-    publishableKey: process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,
+    url: process.env.NEXT_PUBLIC_NEON_DATABASE_URL,
     github: process.env.NEXT_PUBLIC_AUTH_GITHUB_ENABLED,
     google: process.env.NEXT_PUBLIC_AUTH_GOOGLE_ENABLED,
   });
@@ -98,6 +85,11 @@ export const displayNameSchema = z
   .string()
   .trim()
   .max(80, "顯示名稱最多 80 個字元。");
+
+export const otpSchema = z
+  .string()
+  .trim()
+  .regex(/^\d{6}$/, "請輸入信件中的 6 位數驗證碼。");
 
 export function safeReturnPath(value: string | null, origin: string): string {
   if (!value?.startsWith("/") || value.startsWith("//") || value.includes("\\"))

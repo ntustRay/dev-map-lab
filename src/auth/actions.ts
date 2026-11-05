@@ -1,22 +1,26 @@
 "use client";
 
-import { requireSupabaseClient } from "./client";
+import {
+  getEmailAuthClient,
+  getVerifiedUser,
+  requireMemberClient,
+} from "./client";
 import {
   callbackUrl,
   displayNameSchema,
   emailSchema,
+  otpSchema,
   passwordSchema,
   safeReturnPath,
 } from "./config";
 import { MemberOperationError } from "./errors";
-import { forgetRecovery, hasRecovery, rememberRecovery } from "./recovery";
 import { useAuth } from "./state";
 
 export async function signInEmail(
   email: string,
   password: string,
 ): Promise<void> {
-  const { error } = await requireSupabaseClient().auth.signInWithPassword({
+  const { error } = await requireMemberClient().auth.signInWithPassword({
     email: emailSchema.parse(email),
     password,
   });
@@ -29,63 +33,84 @@ export async function signUpEmail(
   password: string,
   displayName: string,
 ): Promise<boolean> {
-  const { data, error } = await requireSupabaseClient().auth.signUp({
-    email: emailSchema.parse(email),
+  const address = emailSchema.parse(email);
+  // The compatibility adapter expects a session at signup, but verified signup has none yet.
+  const { data, error } = await getEmailAuthClient().signUp.email({
+    email: address,
     password: passwordSchema.parse(password),
-    options: {
-      emailRedirectTo: callbackUrl(window.location.origin),
-      data: { display_name: displayNameSchema.parse(displayName) },
-    },
+    name:
+      displayNameSchema.parse(displayName) || address.split("@")[0] || "會員",
   });
   if (error) throw error;
-  if (data.session) await useAuth.getState().refresh();
-  return data.session !== null;
+  if (!data?.user)
+    throw new MemberOperationError("會員服務未回傳註冊結果，請稍後再試。");
+  if (!data.user.emailVerified) {
+    // With verification disabled in the console, signup creates a session but sends no OTP.
+    // Still require proof of email ownership before this application grants member access.
+    if (data.token) await resendVerification(address);
+    return false;
+  }
+  await useAuth.getState().refresh();
+  return useAuth.getState().member !== null;
 }
 
-export async function requestPasswordReset(email: string): Promise<void> {
-  const { error } = await requireSupabaseClient().auth.resetPasswordForEmail(
-    emailSchema.parse(email),
+export async function resendVerification(email: string): Promise<void> {
+  const { error } = await getEmailAuthClient().$fetch(
+    "/email-otp/send-verification-otp",
     {
-      redirectTo: callbackUrl(
-        window.location.origin,
-        "/account/?mode=recovery",
-      ),
+      method: "POST",
+      body: { email: emailSchema.parse(email), type: "email-verification" },
     },
   );
   if (error) throw error;
 }
 
-export async function resendVerification(email: string): Promise<void> {
-  const { error } = await requireSupabaseClient().auth.resend({
-    type: "signup",
-    email: emailSchema.parse(email),
-    options: { emailRedirectTo: callbackUrl(window.location.origin) },
-  });
+export async function verifyEmailCode(
+  email: string,
+  code: string,
+): Promise<boolean> {
+  const { error } = await getEmailAuthClient().$fetch(
+    "/email-otp/verify-email",
+    {
+      method: "POST",
+      body: { email: emailSchema.parse(email), otp: otpSchema.parse(code) },
+    },
+  );
+  if (error) throw error;
+  await useAuth.getState().refresh();
+  return useAuth.getState().member !== null;
+}
+
+export async function requestPasswordReset(email: string): Promise<void> {
+  const { error } = await getEmailAuthClient().$fetch(
+    "/email-otp/request-password-reset",
+    { method: "POST", body: { email: emailSchema.parse(email) } },
+  );
   if (error) throw error;
 }
 
-export async function updateRecoveredPassword(password: string): Promise<void> {
-  const client = requireSupabaseClient();
-  const { data, error: identityError } = await client.auth.getUser();
-  if (
-    identityError ||
-    !data.user ||
-    !useAuth.getState().recovery ||
-    useAuth.getState().member?.id !== data.user.id ||
-    !hasRecovery(data.user.id)
-  )
-    throw new MemberOperationError("請先從密碼重設信開啟有效連結。");
-  const { error } = await client.auth.updateUser({
-    password: passwordSchema.parse(password),
-  });
+export async function resetPasswordWithCode(
+  email: string,
+  code: string,
+  password: string,
+): Promise<void> {
+  const { error } = await getEmailAuthClient().$fetch(
+    "/email-otp/reset-password",
+    {
+      method: "POST",
+      body: {
+        email: emailSchema.parse(email),
+        otp: otpSchema.parse(code),
+        password: passwordSchema.parse(password),
+      },
+    },
+  );
   if (error) throw error;
-  forgetRecovery();
-  useAuth.setState({ recovery: false });
   await signOutMember();
 }
 
 export async function signOutMember(): Promise<void> {
-  const { error } = await requireSupabaseClient().auth.signOut({
+  const { error } = await requireMemberClient().auth.signOut({
     scope: "local",
   });
   if (error) throw error;
@@ -95,7 +120,7 @@ export async function signOutMember(): Promise<void> {
 export async function signInSocial(
   provider: "github" | "google",
 ): Promise<void> {
-  const { error } = await requireSupabaseClient().auth.signInWithOAuth({
+  const { error } = await requireMemberClient().auth.signInWithOAuth({
     provider,
     options: { redirectTo: callbackUrl(window.location.origin) },
   });
@@ -104,28 +129,14 @@ export async function signInSocial(
 
 export async function finishAuthCallback(address: string): Promise<string> {
   const url = new URL(address);
-  if (url.searchParams.has("error"))
-    throw new MemberOperationError("會員驗證未完成，請重新登入或寄送驗證信。");
-  const code = url.searchParams.get("code");
-  if (!code)
-    throw new MemberOperationError("驗證連結缺少授權碼，請重新寄送連結。");
-  const flowId = url.searchParams.get("sb_flow_id");
-  const client = requireSupabaseClient();
-  const { data: listener } = client.auth.onAuthStateChange((event, session) => {
-    if (event === "PASSWORD_RECOVERY" && session?.user) {
-      rememberRecovery(session.user.id);
-      useAuth.setState({ recovery: true });
-    }
-  });
-  try {
-    const { error } = await client.auth.exchangeCodeForSession(
-      code,
-      flowId ? { flowId } : undefined,
+  if (url.searchParams.has("error") || url.hash.includes("error="))
+    throw new MemberOperationError("會員驗證未完成，請重新登入。");
+  // Neon handles its OAuth verifier and session cookie. Do not exchange it as a Supabase PKCE code.
+  const user = await getVerifiedUser();
+  if (!user)
+    throw new MemberOperationError(
+      "尚未取得有效登入狀態，請回到會員頁重新登入。",
     );
-    if (error) throw error;
-  } finally {
-    listener.subscription.unsubscribe();
-  }
   await useAuth.getState().refresh();
   return safeReturnPath(url.searchParams.get("next"), url.origin);
 }
