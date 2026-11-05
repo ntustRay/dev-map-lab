@@ -7,7 +7,7 @@
 | 部分         | 狀態                                                                                                 |
 | ------------ | ---------------------------------------------------------------------------------------------------- |
 | Neon 專案    | `spring-heart-24139390`，AWS us-east-2，免費方案                                                     |
-| 正式資料庫   | `production`；Auth、Data API、兩份 migration 已配置並驗證 RLS                                    |
+| 正式資料庫   | `production`；Auth、Data API、兩份 migration 已配置並驗證 RLS                                        |
 | 測試資料庫   | `dev-member-integration`，獨立 branch；測試帳號與備份不進正式資料庫                                  |
 | 會員程式     | Email 註冊、6 位數 OTP 驗證、登入／登出、OTP 忘記密碼                                                |
 | 本機與雲端   | 每帳號的 IndexedDB、顯示名稱、明確訪客匯入、手動備份與合併                                           |
