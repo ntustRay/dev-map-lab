@@ -1,12 +1,15 @@
 "use client";
-import type { AuthOutcome, AuthResult } from "@ntustray/web-authentication-component";
+import type {
+  AuthOutcome,
+  AuthResult,
+} from "@ntustray/web-authentication-component";
 import { AuthFailure } from "@ntustray/web-authentication-component";
-import { getSharedAuth } from "./shared";
+import { useWorkspace } from "../storage/workspace";
 import { getVerifiedUser } from "./client";
 import { displayNameSchema, otpSchema, safeReturnPath } from "./config";
 import { MemberOperationError } from "./errors";
+import { getSharedAuth } from "./shared";
 import { useAuth } from "./state";
-import { useWorkspace } from "../storage/workspace";
 
 function shared() {
   const controller = getSharedAuth();
@@ -15,38 +18,79 @@ function shared() {
 }
 async function complete(result: AuthResult<AuthOutcome>) {
   if (!result.ok) throw new AuthFailure(result.error.code);
-  if (result.value.kind === "authenticated" || result.value.kind === "complete") await useAuth.getState().refresh();
+  if (result.value.kind === "authenticated" || result.value.kind === "complete")
+    await useAuth.getState().refresh();
   return result.value;
 }
-export async function signInEmail(email: string, password: string): Promise<void> {
+export async function signInEmail(
+  email: string,
+  password: string,
+): Promise<void> {
   await complete(await shared().signIn({ email, password }));
 }
-export async function signUpEmail(email: string, password: string, name: string): Promise<boolean> {
-  return (await complete(await shared().signUp({ email, password, name: displayNameSchema.parse(name) }, password))).kind === "authenticated";
+export async function signUpEmail(
+  email: string,
+  password: string,
+  name: string,
+): Promise<boolean> {
+  return (
+    (
+      await complete(
+        await shared().signUp(
+          { email, password, name: displayNameSchema.parse(name) },
+          password,
+        ),
+      )
+    ).kind === "authenticated"
+  );
 }
 export async function resendVerification(email: string): Promise<void> {
   await complete(await shared().resendVerification(email));
 }
-export async function verifyEmailCode(email: string, code: string): Promise<boolean> {
-  return (await complete(await shared().verifyEmail({ email, code: otpSchema.parse(code) }))).kind === "authenticated";
+export async function verifyEmailCode(
+  email: string,
+  code: string,
+): Promise<boolean> {
+  return (
+    (
+      await complete(
+        await shared().verifyEmail({ email, code: otpSchema.parse(code) }),
+      )
+    ).kind === "authenticated"
+  );
 }
 export async function requestPasswordReset(email: string): Promise<void> {
   await complete(await shared().requestPasswordReset(email));
 }
-export async function resetPasswordWithCode(email: string, code: string, password: string): Promise<void> {
-  await complete(await shared().resetPassword({ email, code: otpSchema.parse(code), password }, password));
+export async function resetPasswordWithCode(
+  email: string,
+  code: string,
+  password: string,
+): Promise<void> {
+  await complete(
+    await shared().resetPassword(
+      { email, code: otpSchema.parse(code), password, token: "" },
+      password,
+    ),
+  );
 }
 export async function signOutMember(): Promise<void> {
   useWorkspace.getState().lock();
   useAuth.setState({ member: null, status: "checking", error: null });
   const result = await shared().signOut();
   if (!result.ok) {
-    useAuth.setState({ member: null, status: "unavailable", error: "登出未完成，請重試。" });
+    useAuth.setState({
+      member: null,
+      status: "unavailable",
+      error: "登出未完成，請重試。",
+    });
     throw new AuthFailure(result.error.code);
   }
   await useAuth.getState().refresh();
 }
-export async function signInSocial(provider: "github" | "google"): Promise<void> {
+export async function signInSocial(
+  provider: "github" | "google",
+): Promise<void> {
   await complete(await shared().signInWithProvider(provider));
 }
 export async function finishAuthCallback(address: string): Promise<string> {

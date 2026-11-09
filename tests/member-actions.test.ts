@@ -15,30 +15,67 @@ vi.mock("../src/auth/client", () => ({
   getVerifiedUser: sdk.getVerifiedUser,
   getEmailAuthClient: () => ({
     getSession: async () => ({ data: null, error: null }),
-    signIn: { email: async () => ({ error: null }), social: async () => ({ error: null }) },
+    signIn: {
+      email: async () => ({ error: null }),
+      social: async () => ({ error: null }),
+    },
     signOut: sdk.signOut,
     signUp: { email: sdk.signUp },
     $fetch: sdk.fetch,
   }),
-  requireMemberClient: () => ({ auth: { signOut: sdk.signOut, onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }) } }),
+  requireMemberClient: () => ({
+    auth: {
+      signOut: sdk.signOut,
+      onAuthStateChange: () => ({
+        data: { subscription: { unsubscribe() {} } },
+      }),
+    },
+  }),
 }));
 vi.mock("../src/auth/state", () => ({
   useAuth: { getState: () => ({ ...sdk.state, refresh: sdk.refresh }) },
 }));
 
 let actions: typeof import("../src/auth/actions");
-async function signUpEmail(...args: Parameters<typeof actions.signUpEmail>) { return actions.signUpEmail(...args); }
-async function verifyEmailCode(...args: Parameters<typeof actions.verifyEmailCode>) { return actions.verifyEmailCode(...args); }
-async function requestPasswordReset(...args: Parameters<typeof actions.requestPasswordReset>) { return actions.requestPasswordReset(...args); }
-async function resendVerification(...args: Parameters<typeof actions.resendVerification>) { return actions.resendVerification(...args); }
-async function resetPasswordWithCode(...args: Parameters<typeof actions.resetPasswordWithCode>) { return actions.resetPasswordWithCode(...args); }
-async function finishAuthCallback(...args: Parameters<typeof actions.finishAuthCallback>) { return actions.finishAuthCallback(...args); }
+async function signUpEmail(...args: Parameters<typeof actions.signUpEmail>) {
+  return actions.signUpEmail(...args);
+}
+async function verifyEmailCode(
+  ...args: Parameters<typeof actions.verifyEmailCode>
+) {
+  return actions.verifyEmailCode(...args);
+}
+async function requestPasswordReset(
+  ...args: Parameters<typeof actions.requestPasswordReset>
+) {
+  return actions.requestPasswordReset(...args);
+}
+async function resendVerification(
+  ...args: Parameters<typeof actions.resendVerification>
+) {
+  return actions.resendVerification(...args);
+}
+async function resetPasswordWithCode(
+  ...args: Parameters<typeof actions.resetPasswordWithCode>
+) {
+  return actions.resetPasswordWithCode(...args);
+}
+async function finishAuthCallback(
+  ...args: Parameters<typeof actions.finishAuthCallback>
+) {
+  return actions.finishAuthCallback(...args);
+}
 
 const id = "11111111-1111-4111-8111-111111111111";
 beforeEach(async () => {
   vi.resetModules();
-  vi.stubGlobal("window", { location: { origin: "https://learn.example.test" } });
-  vi.stubEnv("NEXT_PUBLIC_NEON_DATABASE_URL", "https://ep-actions.neon.tech/neondb");
+  vi.stubGlobal("window", {
+    location: { origin: "https://learn.example.test" },
+  });
+  vi.stubEnv(
+    "NEXT_PUBLIC_NEON_DATABASE_URL",
+    "https://ep-actions.neon.tech/neondb",
+  );
   actions = await import("../src/auth/actions");
   vi.clearAllMocks();
   sdk.state.member = { id };
@@ -50,18 +87,23 @@ beforeEach(async () => {
   sdk.fetch.mockResolvedValue({ data: {}, error: null });
   sdk.signOut.mockResolvedValue({ error: null });
 });
-afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
+});
 
 describe("Neon Managed SDK 的 Email OTP 與 callback 邊界", () => {
   it("未驗證註冊不當作已登入；使用 native signup 避免相容 adapter 要求 session", async () => {
     expect(
       await signUpEmail(" Person@Example.com ", "long passphrase!", " Ray "),
     ).toBe(false);
-    expect(sdk.signUp).toHaveBeenCalledWith(expect.objectContaining({
-      email: "person@example.com",
-      password: "long passphrase!",
-      name: "Ray",
-    }));
+    expect(sdk.signUp).toHaveBeenCalledWith(
+      expect.objectContaining({
+        email: "person@example.com",
+        password: "long passphrase!",
+        name: "Ray",
+      }),
+    );
     expect(sdk.refresh).not.toHaveBeenCalled();
   });
   it("驗證成功才重新讀取會員；沒有 session 則回登入頁", async () => {
