@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { AppShell } from "../components/app-shell";
 import { loadContent } from "../content/load";
 import "./globals.css";
+import "@ntustray/web-authentication-component/styles.css";
 
 export const metadata: Metadata = {
   title: {

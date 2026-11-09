@@ -1,118 +1,71 @@
 "use client";
-
 import { create } from "zustand";
 import { useWorkspace } from "../storage/workspace";
-import { getMemberClient, getVerifiedUser } from "./client";
 import { getAuthConfiguration } from "./config";
-import { authErrorMessage, MemberOperationError } from "./errors";
-import { accountScope, type Member, memberFromUser } from "./identity";
+import { accountScope, memberSchema, type Member } from "./identity";
+import { getSharedAuth } from "./shared";
 
 type AuthState = {
-  status:
-    | "checking"
-    | "disabled"
-    | "signed-out"
-    | "authenticated"
-    | "unavailable";
+  status: "checking" | "disabled" | "signed-out" | "authenticated" | "unavailable";
   member: Member | null;
   error: string | null;
   refresh: () => Promise<void>;
 };
 let generation = 0;
-
-export const useAuth = create<AuthState>((set) => ({
-  status: "checking",
-  member: null,
-  error: null,
-  refresh: async () => {
-    const request = ++generation;
-    const config = getAuthConfiguration();
-    const client = getMemberClient();
-    if (!client || config.status !== "ready") {
-      set({
-        status: "disabled",
-        member: null,
-        error: config.status === "invalid" ? config.reason : null,
-      });
-      await useWorkspace.getState().switchScope("guest");
-      return;
-    }
-    try {
-      const user = await getVerifiedUser();
-      if (request !== generation) return;
-      if (!user) {
-        set({
-          status: "signed-out",
-          member: null,
-          error: null,
-        });
-        await useWorkspace.getState().switchScope("guest");
-        return;
-      }
-      if (!user.email_confirmed_at)
-        throw new MemberOperationError("請先完成 Email 驗證，再使用會員資料。");
-      const member = memberFromUser(user);
-      await useWorkspace
-        .getState()
-        .switchScope(accountScope(config.value.projectNamespace, member.id));
-      if (request === generation)
-        set({
-          status: "authenticated",
-          member,
-          error: null,
-        });
-    } catch (error) {
-      if (request !== generation) return;
-      set({
-        status: "unavailable",
-        member: null,
-        error: authErrorMessage(error),
-      });
-      await useWorkspace.getState().switchScope("guest");
-    }
+export const useAuth = create<AuthState>(() => ({
+  status: "checking", member: null, error: null,
+  async refresh() {
+    const controller = getSharedAuth();
+    if (controller) await controller.refresh();
+    await synchronize();
   },
 }));
-
-export function startAuth(): () => void {
-  const client = getMemberClient();
-  const timers = new Set<ReturnType<typeof setTimeout>>();
-  if (!client) {
-    void useAuth.getState().refresh();
-    return () => {
-      generation++;
-    };
+async function synchronize() {
+  const request = ++generation;
+  const config = getAuthConfiguration();
+  const controller = getSharedAuth();
+  if (!controller || config.status !== "ready") {
+    useAuth.setState({ status: "disabled", member: null, error: config.status === "invalid" ? config.reason : null });
+    await useWorkspace.getState().switchScope("guest");
+    return;
   }
-  const { data } = client.auth.onAuthStateChange((event, session) => {
-    // Keep callbacks synchronous; profile/workspace calls run after the Auth callback has returned.
-    if (event === "SIGNED_OUT") {
-      generation++;
-      useAuth.setState({
-        status: "signed-out",
-        member: null,
-        error: null,
-      });
-      void useWorkspace.getState().switchScope("guest");
-      return;
-    }
-    // Invalidate an in-flight identity check before the deferred refresh.
-    generation++;
-    if (session?.user.id !== useAuth.getState().member?.id) {
-      useWorkspace.getState().lock();
-      useAuth.setState({
-        status: "checking",
-        member: null,
-      });
-    }
-    const timer = setTimeout(() => {
-      timers.delete(timer);
-      void useAuth.getState().refresh();
-    }, 0);
-    timers.add(timer);
-  });
-  void useAuth.getState().refresh();
+  const state = controller.getSnapshot();
+  const id = state.session?.user.id ?? null;
+  if (state.status === "checking" || id !== useAuth.getState().member?.id) {
+    useWorkspace.getState().lock();
+    useAuth.setState({ status: "checking", member: null, error: null });
+  }
+  if (state.status === "checking") return;
+  if (!state.session) {
+    useAuth.setState({ status: state.status === "unavailable" ? "unavailable" : "signed-out", member: null, error: state.status === "unavailable" ? "會員狀態暫時無法確認，請重試。" : null });
+    await useWorkspace.getState().switchScope("guest");
+    return;
+  }
+  try {
+    const user = state.session.user;
+    const member = memberSchema.parse({ id: user.id, email: user.email, displayName: (user.name ?? "").slice(0, 80) });
+    await useWorkspace.getState().switchScope(accountScope(config.value.projectNamespace, member.id));
+    if (request === generation) useAuth.setState({ status: "authenticated", member, error: null });
+  } catch {
+    if (request !== generation) return;
+    useAuth.setState({ status: "unavailable", member: null, error: "無法載入會員資料空間，請重試。" });
+    await useWorkspace.getState().switchScope("guest");
+  }
+}
+export function startAuth(): () => void {
+  const controller = getSharedAuth();
+  if (!controller) { void synchronize(); return () => { generation++; }; }
+  const unsubscribe = controller.subscribe(() => { void synchronize(); });
+  const stop = controller.start();
+  const refresh = () => { void controller.refresh({ background: true }); };
+  const visible = () => { if (document.visibilityState === "visible") refresh(); };
+  window.addEventListener("focus", refresh);
+  document.addEventListener("visibilitychange", visible);
+  void synchronize();
   return () => {
     generation++;
-    data.subscription.unsubscribe();
-    for (const timer of timers) clearTimeout(timer);
+    unsubscribe(); stop();
+    window.removeEventListener("focus", refresh);
+    document.removeEventListener("visibilitychange", visible);
   };
 }

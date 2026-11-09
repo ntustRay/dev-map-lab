@@ -1,132 +1,54 @@
 "use client";
-
-import {
-  getEmailAuthClient,
-  getVerifiedUser,
-  requireMemberClient,
-} from "./client";
-import {
-  callbackUrl,
-  displayNameSchema,
-  emailSchema,
-  otpSchema,
-  passwordSchema,
-  safeReturnPath,
-} from "./config";
+import type { AuthOutcome, AuthResult } from "@ntustray/web-authentication-component";
+import { AuthFailure } from "@ntustray/web-authentication-component";
+import { getSharedAuth } from "./shared";
+import { getVerifiedUser } from "./client";
+import { displayNameSchema, otpSchema, safeReturnPath } from "./config";
 import { MemberOperationError } from "./errors";
 import { useAuth } from "./state";
+import { useWorkspace } from "../storage/workspace";
 
-export async function signInEmail(
-  email: string,
-  password: string,
-): Promise<void> {
-  const { error } = await requireMemberClient().auth.signInWithPassword({
-    email: emailSchema.parse(email),
-    password,
-  });
-  if (error) throw error;
-  await useAuth.getState().refresh();
+function shared() {
+  const controller = getSharedAuth();
+  if (!controller) throw new MemberOperationError("會員服務尚未啟用。");
+  return controller;
 }
-
-export async function signUpEmail(
-  email: string,
-  password: string,
-  displayName: string,
-): Promise<boolean> {
-  const address = emailSchema.parse(email);
-  // The compatibility adapter expects a session at signup, but verified signup has none yet.
-  const { data, error } = await getEmailAuthClient().signUp.email({
-    email: address,
-    password: passwordSchema.parse(password),
-    name:
-      displayNameSchema.parse(displayName) || address.split("@")[0] || "會員",
-  });
-  if (error) throw error;
-  if (!data?.user)
-    throw new MemberOperationError("會員服務未回傳註冊結果，請稍後再試。");
-  if (!data.user.emailVerified) {
-    // With verification disabled in the console, signup creates a session but sends no OTP.
-    // Still require proof of email ownership before this application grants member access.
-    if (data.token) await resendVerification(address);
-    return false;
+async function complete(result: AuthResult<AuthOutcome>) {
+  if (!result.ok) throw new AuthFailure(result.error.code);
+  if (result.value.kind === "authenticated" || result.value.kind === "complete") await useAuth.getState().refresh();
+  return result.value;
+}
+export async function signInEmail(email: string, password: string): Promise<void> {
+  await complete(await shared().signIn({ email, password }));
+}
+export async function signUpEmail(email: string, password: string, name: string): Promise<boolean> {
+  return (await complete(await shared().signUp({ email, password, name: displayNameSchema.parse(name) }, password))).kind === "authenticated";
+}
+export async function resendVerification(email: string): Promise<void> {
+  await complete(await shared().resendVerification(email));
+}
+export async function verifyEmailCode(email: string, code: string): Promise<boolean> {
+  return (await complete(await shared().verifyEmail({ email, code: otpSchema.parse(code) }))).kind === "authenticated";
+}
+export async function requestPasswordReset(email: string): Promise<void> {
+  await complete(await shared().requestPasswordReset(email));
+}
+export async function resetPasswordWithCode(email: string, code: string, password: string): Promise<void> {
+  await complete(await shared().resetPassword({ email, code: otpSchema.parse(code), password }, password));
+}
+export async function signOutMember(): Promise<void> {
+  useWorkspace.getState().lock();
+  useAuth.setState({ member: null, status: "checking", error: null });
+  const result = await shared().signOut();
+  if (!result.ok) {
+    useAuth.setState({ member: null, status: "unavailable", error: "登出未完成，請重試。" });
+    throw new AuthFailure(result.error.code);
   }
   await useAuth.getState().refresh();
-  return useAuth.getState().member !== null;
 }
-
-export async function resendVerification(email: string): Promise<void> {
-  const { error } = await getEmailAuthClient().$fetch(
-    "/email-otp/send-verification-otp",
-    {
-      method: "POST",
-      body: { email: emailSchema.parse(email), type: "email-verification" },
-    },
-  );
-  if (error) throw error;
+export async function signInSocial(provider: "github" | "google"): Promise<void> {
+  await complete(await shared().signInWithProvider(provider));
 }
-
-export async function verifyEmailCode(
-  email: string,
-  code: string,
-): Promise<boolean> {
-  const { error } = await getEmailAuthClient().$fetch(
-    "/email-otp/verify-email",
-    {
-      method: "POST",
-      body: { email: emailSchema.parse(email), otp: otpSchema.parse(code) },
-    },
-  );
-  if (error) throw error;
-  await useAuth.getState().refresh();
-  return useAuth.getState().member !== null;
-}
-
-export async function requestPasswordReset(email: string): Promise<void> {
-  const { error } = await getEmailAuthClient().$fetch(
-    "/email-otp/request-password-reset",
-    { method: "POST", body: { email: emailSchema.parse(email) } },
-  );
-  if (error) throw error;
-}
-
-export async function resetPasswordWithCode(
-  email: string,
-  code: string,
-  password: string,
-): Promise<void> {
-  const { error } = await getEmailAuthClient().$fetch(
-    "/email-otp/reset-password",
-    {
-      method: "POST",
-      body: {
-        email: emailSchema.parse(email),
-        otp: otpSchema.parse(code),
-        password: passwordSchema.parse(password),
-      },
-    },
-  );
-  if (error) throw error;
-  await signOutMember();
-}
-
-export async function signOutMember(): Promise<void> {
-  const { error } = await requireMemberClient().auth.signOut({
-    scope: "local",
-  });
-  if (error) throw error;
-  await useAuth.getState().refresh();
-}
-
-export async function signInSocial(
-  provider: "github" | "google",
-): Promise<void> {
-  const { error } = await requireMemberClient().auth.signInWithOAuth({
-    provider,
-    options: { redirectTo: callbackUrl(window.location.origin) },
-  });
-  if (error) throw error;
-}
-
 export async function finishAuthCallback(address: string): Promise<string> {
   const url = new URL(address);
   if (url.searchParams.has("error") || url.hash.includes("error="))

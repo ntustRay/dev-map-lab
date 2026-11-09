@@ -25,7 +25,8 @@ type Listener = (
 ) => void;
 const sdk = vi.hoisted(() => {
   const listener: { current: Listener | null } = { current: null };
-  return { getVerifiedUser: vi.fn<() => Promise<Identity | null>>(), listener };
+  const holder: { value: import("@ntustray/web-authentication-component").AuthController | null } = { value: null };
+  return { getVerifiedUser: vi.fn<() => Promise<Identity | null>>(), listener, controller: holder };
 });
 vi.mock("../src/auth/config", async (original) => ({
   ...(await original<typeof import("../src/auth/config")>()),
@@ -38,25 +39,39 @@ vi.mock("../src/auth/config", async (original) => ({
     },
   }),
 }));
-vi.mock("../src/auth/client", () => ({
-  getVerifiedUser: sdk.getVerifiedUser,
-  getMemberClient: () => ({
-    auth: {
-      onAuthStateChange: (listener: Listener) => {
-        sdk.listener.current = listener;
-        return {
-          data: {
-            subscription: {
-              unsubscribe: () => {
-                sdk.listener.current = null;
-              },
-            },
+vi.mock("../src/auth/shared", async () => {
+  const { createAuthController, passwordOnly, success } = await import("@ntustray/web-authentication-component");
+  return {
+    getSharedAuth() {
+      sdk.controller.value ??= createAuthController({
+        methods: passwordOnly,
+        adapter: {
+          id: "fixture",
+          capabilities: { ...passwordOnly, providers: [], recovery: "code", verification: "code" },
+          async getSession() {
+            const user = await sdk.getVerifiedUser();
+            return success(user ? { user: { id: user.id, email: user.email, name: null, emailVerified: !!user.email_confirmed_at }, expiresAt: null } : null);
           },
-        };
-      },
+          subscribe(notify) {
+            sdk.listener.current = (event) => {
+              if (event === "SIGNED_OUT") sdk.getVerifiedUser.mockResolvedValue(null);
+              notify();
+            };
+            return () => { sdk.listener.current = null; };
+          },
+          signOut: async () => success({ kind: "complete" }),
+          signIn: async () => success({ kind: "complete" }),
+          signUp: async () => success({ kind: "verification-required", delivery: "code" }),
+          requestPasswordReset: async () => success({ kind: "sent", delivery: "code" }),
+          resetPassword: async () => success({ kind: "complete" }),
+          resendVerification: async () => success({ kind: "sent", delivery: "code" }),
+          verifyEmail: async () => success({ kind: "complete" }),
+        },
+      });
+      return sdk.controller.value;
     },
-  }),
-}));
+  };
+});
 
 import { accountScope } from "../src/auth/identity";
 import { startAuth, useAuth } from "../src/auth/state";
@@ -102,6 +117,7 @@ beforeEach(async () => {
     member: null,
     error: null,
   });
+  sdk.controller.value = null;
   sdk.getVerifiedUser.mockReset();
   sdk.getVerifiedUser.mockResolvedValue(user(a));
   for (const scope of scopes) {
@@ -178,7 +194,7 @@ describe("會員狀態與實際本機工作空間切換", () => {
     });
     stop = startAuth();
     await vi.waitFor(() =>
-      expect(useAuth.getState().status).toBe("unavailable"),
+      expect(useAuth.getState().status).toBe("signed-out"),
     );
     expect(useAuth.getState().member).toBeNull();
     expect(useWorkspace.getState().scope).toBe("guest");

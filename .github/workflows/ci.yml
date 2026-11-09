@@ -30,6 +30,10 @@ jobs:
         with:
           bun-version: "1.4.4"
       - run: bun install --frozen-lockfile
+      - name: Prepare authentication formatting patch
+        run: |
+          bunx biome check --write package.json src/auth/shared.ts src/components/member-auth-forms.tsx src/components/auth-bridge.tsx src/app/layout.tsx src/auth/actions.ts src/auth/state.ts tests/member-sessions.test.ts tests/member-actions.test.ts
+          git diff -- package.json src/auth/shared.ts src/components/member-auth-forms.tsx src/components/auth-bridge.tsx src/app/layout.tsx src/auth/actions.ts src/auth/state.ts tests/member-sessions.test.ts tests/member-actions.test.ts
       - run: bun run check
       - run: bun run typecheck
       - run: bun run content:check
