@@ -90,6 +90,7 @@ beforeEach(async () => {
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.unstubAllEnvs();
+  vi.useRealTimers();
 });
 
 describe("Neon Managed SDK 的 Email OTP 與 callback 邊界", () => {
@@ -130,7 +131,9 @@ describe("Neon Managed SDK 的 Email OTP 與 callback 邊界", () => {
     expect(sdk.refresh).not.toHaveBeenCalled();
   });
   it("寄送驗證與重設都走 SDK 的 OTP 端點，不依賴重設連結", async () => {
+    vi.useFakeTimers();
     await requestPasswordReset("Person@Example.com");
+    await vi.advanceTimersByTimeAsync(61_000);
     await resendVerification("Person@Example.com");
     expect(sdk.fetch).toHaveBeenNthCalledWith(
       1,

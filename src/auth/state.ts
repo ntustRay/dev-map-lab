@@ -42,7 +42,7 @@ async function synchronize() {
   }
   const state = controller.getSnapshot();
   const id = state.session?.user.id ?? null;
-  if (state.status === "checking" || id !== useAuth.getState().member?.id) {
+  if (state.status === "checking" || id !== (useAuth.getState().member?.id ?? null)) {
     useWorkspace.getState().lock();
     useAuth.setState({ status: "checking", member: null, error: null });
   }
@@ -100,13 +100,16 @@ export function startAuth(): () => void {
     if (document.visibilityState === "visible") refresh();
   };
   if (typeof window !== "undefined") window.addEventListener("focus", refresh);
-  if (typeof document !== "undefined") document.addEventListener("visibilitychange", visible);
+  if (typeof document !== "undefined")
+    document.addEventListener("visibilitychange", visible);
   void synchronize();
   return () => {
     generation++;
     unsubscribe();
     stop();
-    if (typeof window !== "undefined") window.removeEventListener("focus", refresh);
-    if (typeof document !== "undefined") document.removeEventListener("visibilitychange", visible);
+    if (typeof window !== "undefined")
+      window.removeEventListener("focus", refresh);
+    if (typeof document !== "undefined")
+      document.removeEventListener("visibilitychange", visible);
   };
 }
