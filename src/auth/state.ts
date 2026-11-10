@@ -42,7 +42,10 @@ async function synchronize() {
   }
   const state = controller.getSnapshot();
   const id = state.session?.user.id ?? null;
-  if (state.status === "checking" || id !== (useAuth.getState().member?.id ?? null)) {
+  if (
+    state.status === "checking" ||
+    id !== (useAuth.getState().member?.id ?? null)
+  ) {
     useWorkspace.getState().lock();
     useAuth.setState({ status: "checking", member: null, error: null });
   }

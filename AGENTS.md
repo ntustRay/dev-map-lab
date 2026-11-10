@@ -39,3 +39,7 @@
 - 修改評分、執行器、備份或內容模型時，驗證正常、錯誤與邊界案例。
 - 說明實際通過的檢查與限制，區分 SDK 邊界測試、PGlite 的 PostgreSQL/RLS 測試及線上服務驗證；不得宣稱尚未配置的後端已啟用。
 - 優先修正已發現的問題；不以 snapshot 或字串斷言取代真實程式執行與資料庫操作。
+
+## Shared authentication
+
+Use the published @ntustray/web-authentication-component npm package for authentication UI, state and adapters. Preserve the Managed Neon SDK, existing user IDs, six-digit OTP, server verification, RLS and account-isolated IndexedDB. Update shared behavior in the package before updating this dependency and lockfile. Existing short passwords remain valid for sign-in.

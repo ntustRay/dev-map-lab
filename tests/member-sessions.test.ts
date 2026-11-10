@@ -178,7 +178,9 @@ describe("會員狀態與實際本機工作空間切換", () => {
     sdk.listener.current?.("SIGNED_OUT", null);
     expect(useAuth.getState().member).toBeNull();
     expect(useWorkspace.getState().notes).toEqual([]);
-    await vi.waitFor(() => expect(useWorkspace.getState().notes[0]?.body).toBe("guest"));
+    await vi.waitFor(() =>
+      expect(useWorkspace.getState().notes[0]?.body).toBe("guest"),
+    );
   });
   it("新登入事件會立刻作廢舊 getVerifiedUser 回應，不讓 A 閃回 B 的畫面", async () => {
     const old = deferred<Identity | null>();
@@ -205,7 +207,9 @@ describe("會員狀態與實際本機工作空間切換", () => {
     old.resolve(user(a));
     await refresh;
     await useWorkspace.getState().switchScope("guest");
-    await vi.waitFor(() => expect(useAuth.getState().status).toBe("signed-out"));
+    await vi.waitFor(() =>
+      expect(useAuth.getState().status).toBe("signed-out"),
+    );
     expect(useWorkspace.getState().scope).toBe("guest");
   });
   it("驗證失敗顯示錯誤並回到訪客空間，不使用未驗證的會員 ID", async () => {
