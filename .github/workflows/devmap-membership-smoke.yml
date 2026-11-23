@@ -2,13 +2,13 @@ name: Dev Map Lab disposable membership smoke
 on:
   pull_request:
     paths:
-      - '.github/workflows/devmap-membership-smoke.yml'
+      - ".github/workflows/devmap-membership-smoke.yml"
 permissions:
   contents: read
 jobs:
   membership:
     if: github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'codex/devmap-membership-smoke-20261123'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     env:
       NEXT_TELEMETRY_DISABLED: "1"
@@ -39,23 +39,23 @@ jobs:
           import { randomUUID } from 'node:crypto';
           import { createRequire } from 'node:module';
           import { setTimeout as delay } from 'node:timers/promises';
-          
+
           const require = createRequire(process.env.RUNNER_TEMP + '/devmap-playwright/node_modules/playwright/package.json');
           const { chromium } = require('playwright');
           const site = 'http://localhost:39281';
           const devHost = 'ep-winter-dream-bdvu662b.neonauth.c-8.us-east-2.aws.neon.tech';
           const redactions = [];
-          
+
           function clean(value) {
             return redactions.reduce((text, item) => text.replaceAll(item, '[test value]'), String(value)).replace(/\b\d{6}\b/g, '[code]');
           }
-          
+
           function secret() {
             const value = 'Qa-' + randomUUID() + '#4';
             redactions.push(value);
             return value;
           }
-          
+
           async function mail(path, { body, token } = {}) {
             const response = await fetch('https://api.mail.tm' + path, {
               method: body ? 'POST' : 'GET',
@@ -70,7 +70,7 @@ jobs:
             if (!response.ok) throw new Error('Disposable mailbox API HTTP ' + response.status);
             return response.json();
           }
-          
+
           async function identity(domain) {
             const address = 'devmapqa-' + randomUUID().slice(0, 14) + '@' + domain;
             redactions.push(address);
@@ -81,7 +81,7 @@ jobs:
             redactions.push(token);
             return { address, token, password: secret(), seen: new Set() };
           }
-          
+
           async function receive(identity, purpose) {
             const deadline = Date.now() + 85_000;
             while (Date.now() < deadline) {
@@ -100,7 +100,7 @@ jobs:
             }
             throw new Error('No mail received for ' + purpose + ' within 85 seconds');
           }
-          
+
           async function open(browser, label) {
             const context = await browser.newContext();
             const page = await context.newPage();
@@ -121,22 +121,22 @@ jobs:
             });
             return page;
           }
-          
+
           const form = (page, name) => page.getByRole('form', { name, exact: true });
           const button = (container, name) => container.getByRole('button', { name, exact: true });
           const input = (container, name) => container.getByLabel(name, { exact: true });
           const signedIn = (page) => button(page, '登出此裝置').waitFor();
-          
+
           async function account(page) {
             await page.goto(site + '/account/', { waitUntil: 'domcontentloaded' });
             await page.getByRole('heading', { name: '會員與備份', exact: true }).waitFor();
           }
-          
+
           async function passwordFields(container, value, confirm = false) {
             await input(container, '密碼').fill(value);
             if (confirm) await input(container, '再次輸入密碼').fill(value);
           }
-          
+
           async function signup(page, fixture, name) {
             await account(page);
             await button(page, '建立帳號').click();
@@ -152,7 +152,7 @@ jobs:
             await button(verification, '驗證 Email').click();
             await signedIn(page);
           }
-          
+
           async function login(page, fixture, old = false) {
             await account(page);
             const login = form(page, '登入');
@@ -162,14 +162,14 @@ jobs:
             if (old) await page.getByText('Email 或密碼不正確，請確認後再試。', { exact: true }).waitFor();
             else await signedIn(page);
           }
-          
+
           async function lesson(page) {
             await page.goto(site + '/learn/javascript-closures/', { waitUntil: 'domcontentloaded' });
             const note = page.getByRole('textbox', { name: '本單元整頁筆記', exact: true });
             await note.waitFor();
             return note;
           }
-          
+
           async function backup(page, noteBody) {
             const note = await lesson(page);
             await note.fill(noteBody);
@@ -180,7 +180,7 @@ jobs:
             await button(page, '備份到雲端').click();
             await page.getByText(/目前雲端版本 1，包含 1 則筆記/).waitFor();
           }
-          
+
           async function recover(page, fixture, replacement) {
             await account(page);
             await button(page, '忘記密碼').click();
@@ -194,7 +194,7 @@ jobs:
             await button(reset, '設定新密碼').click();
             await page.getByText('密碼已更新，請重新登入。', { exact: true }).waitFor();
           }
-          
+
           let stage = 'starting isolated browser sessions';
           let activePage;
           const browser = await chromium.launch();
