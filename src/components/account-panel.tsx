@@ -28,7 +28,6 @@ function message(error: unknown): string {
 }
 
 export function AccountPanel() {
-  const status = useAuth((state) => state.status);
   const member = useAuth((state) => state.member);
   const error = useAuth((state) => state.error);
   const config = getAuthConfiguration();
@@ -42,11 +41,7 @@ export function AccountPanel() {
       <p className="intro-copy">
         登入後使用自己的學習空間，並選擇何時備份到雲端。
       </p>
-      {status === "checking" ? (
-        <div className="account-card">
-          <p role="status">確認會員狀態與本機資料空間…</p>
-        </div>
-      ) : config.status !== "ready" ? (
+      {config.status !== "ready" ? (
         <div className="account-card">
           <h2>會員功能尚未啟用</h2>
           <p>{config.reason}</p>
@@ -72,6 +67,7 @@ export function AccountPanel() {
       ) : (
         <>
           <div className="account-layout">
+            {/* The shared panel keeps its form step while it checks the session. */}
             <AuthForms />
             <aside className="account-info">
               <h2>登入後的資料怎麼保存？</h2>

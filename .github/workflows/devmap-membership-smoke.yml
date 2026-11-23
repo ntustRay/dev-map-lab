@@ -164,6 +164,10 @@ jobs:
             assert.equal(await button(page, '登出此裝置').count(), 0);
             await input(verification, '驗證碼').fill(await receive(fixture, 'signup'));
             await button(verification, '驗證 Email').click();
+            const memberButton = button(page, '登出此裝置');
+            const verified = page.getByText('Email 已驗證，請登入。', { exact: true });
+            await memberButton.or(verified).first().waitFor();
+            if (await verified.isVisible()) await login(page, fixture);
             await signedIn(page);
           }
 
@@ -187,9 +191,8 @@ jobs:
           async function backup(page, noteBody) {
             const note = await lesson(page);
             await note.fill(noteBody);
-            await page.reload({ waitUntil: 'domcontentloaded' });
-            await page.waitForFunction((expected) => document.querySelector('#page-note')?.value === expected, noteBody);
-            await account(page);
+            await page.getByRole('link', { name: '會員與備份', exact: true }).click();
+            await page.getByRole('heading', { name: '管理帳號與學習資料', exact: true }).waitFor();
             await page.getByText('還沒有雲端備份。', { exact: true }).waitFor();
             await button(page, '備份到雲端').click();
             await page.getByText(/目前雲端版本 1，包含 1 則筆記/).waitFor();
