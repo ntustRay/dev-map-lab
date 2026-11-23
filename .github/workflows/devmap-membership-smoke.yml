@@ -57,18 +57,32 @@ jobs:
           }
 
           async function mail(path, { body, token } = {}) {
-            const response = await fetch('https://api.mail.tm' + path, {
-              method: body ? 'POST' : 'GET',
-              headers: {
-                accept: 'application/ld+json',
-                ...(body ? { 'content-type': 'application/json' } : {}),
-                ...(token ? { authorization: 'Bearer ' + token } : {}),
-              },
-              body: body ? JSON.stringify(body) : undefined,
-              signal: AbortSignal.timeout(12_000),
-            });
-            if (!response.ok) throw new Error('Disposable mailbox API HTTP ' + response.status);
-            return response.json();
+            const action = path.split('/').slice(0, 2).join('/');
+            for (let attempt = 0; attempt < 2; attempt++) {
+              const response = await fetch('https://api.mail.tm' + path, {
+                method: body ? 'POST' : 'GET',
+                headers: {
+                  accept: 'application/ld+json',
+                  ...(body ? { 'content-type': 'application/json' } : {}),
+                  ...(token ? { authorization: 'Bearer ' + token } : {}),
+                },
+                body: body ? JSON.stringify(body) : undefined,
+                signal: AbortSignal.timeout(12_000),
+              });
+              if (response.ok) {
+                await delay(300);
+                return response.json();
+              }
+              const header = response.headers.get('retry-after');
+              const timestamp = header && Date.parse(header);
+              const wait = header && /^\d+$/.test(header) ? Number(header) * 1000 : (timestamp ? timestamp - Date.now() : 12_000);
+              if (response.status !== 429 || attempt > 0 || wait > 60_000) {
+                throw new Error('Disposable mailbox API ' + action + ' HTTP ' + response.status);
+              }
+              console.log('Backing off after disposable mailbox rate limit for ' + action);
+              await response.body?.cancel();
+              await delay(Math.max(wait, 1000));
+            }
           }
 
           async function identity(domain) {
