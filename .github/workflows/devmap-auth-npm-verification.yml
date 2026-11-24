@@ -1,0 +1,41 @@
+name: Verify published authentication runtime
+
+on:
+  push:
+    branches: ["codex/devmap-auth-smoke-20261124"]
+    paths:
+      - ".github/workflows/devmap-auth-npm-verification.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  published-runtime:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ntustRay/web-authentication-component
+          ref: c73f609698f9c5cad2cccf56241a62b41effc05e
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4.4"
+      - name: Compare published source and compiled runtime
+        run: |
+          set -eu
+          package='@ntustray/web-authentication-component'
+          test "$(npm view "$package" version)" = 0.3.0
+          tarball="$(npm pack "$package@0.3.0" --pack-destination "$RUNNER_TEMP" --ignore-scripts --silent)"
+          mkdir -p "$RUNNER_TEMP/published"
+          tar -xzf "$RUNNER_TEMP/$tarball" -C "$RUNNER_TEMP/published"
+          diff -qr src "$RUNNER_TEMP/published/package/src"
+          echo "Published src is identical to the current package main source"
+          bun install --frozen-lockfile
+          bun run build
+          diff -qr --exclude='*.map' dist "$RUNNER_TEMP/published/package/dist"
+          echo "Published JavaScript, declarations and CSS are identical to the current package main build"
