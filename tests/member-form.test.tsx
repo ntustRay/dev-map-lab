@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 
-import { act, createElement } from "react";
+import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
 import { useAuth } from "../src/auth/state";
@@ -13,7 +13,7 @@ vi.mock("next/navigation", () => ({ usePathname: () => "/account/" }));
 vi.mock("../src/components/auth-bridge", () => ({ AuthBridge: () => null }));
 
 vi.mock("../src/components/member-auth-forms", () => ({
-  AuthForms: () => createElement("input", { type: "email" }),
+  AuthForms: () => <input type="email" />,
 }));
 
 it("切換本機資料空間時保留會員表單和已輸入的內容", async () => {
@@ -33,11 +33,9 @@ it("切換本機資料空間時保留會員表單和已輸入的內容", async (
   try {
     await act(async () =>
       root.render(
-        createElement(AppShell, {
-          catalog: { schemaVersion: 1, tracks: [] },
-          lessons: [],
-          children: createElement(AccountPanel),
-        }),
+        <AppShell catalog={{ schemaVersion: 1, tracks: [] }} lessons={[]}>
+          <AccountPanel />
+        </AppShell>,
       ),
     );
     const email = host.querySelector("input");
