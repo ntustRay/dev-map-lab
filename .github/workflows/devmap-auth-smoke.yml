@@ -3,7 +3,7 @@ on:
   push:
     branches: ["codex/devmap-auth-smoke-20261124"]
     paths:
-      - ".github/workflows/devmap-membership-smoke.yml"
+      - ".github/workflows/devmap-auth-smoke.yml"
 permissions:
   contents: read
 jobs:
