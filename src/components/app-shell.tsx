@@ -19,6 +19,10 @@ export function AppShell({
   children: ReactNode;
 }) {
   const pathname = usePathname();
+  const isAuthFlow =
+    pathname === "/account" ||
+    pathname === "/account/" ||
+    pathname.startsWith("/auth/");
   const [menuOpen, setMenuOpen] = useState(false);
   const ready = useWorkspace((state) => state.ready);
   const scope = useWorkspace((state) => state.scope);
@@ -151,9 +155,7 @@ export function AppShell({
           </div>
         ) : null}
         <main id="main-content">
-          <Fragment key={pathname.startsWith("/auth/") ? "auth-flow" : scope}>
-            {children}
-          </Fragment>
+          <Fragment key={isAuthFlow ? "auth-flow" : scope}>{children}</Fragment>
         </main>
         <footer className="app-footer">
           <span>Dev Map Lab</span>
