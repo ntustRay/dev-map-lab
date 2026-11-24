@@ -1,0 +1,257 @@
+name: Dev Map Lab signup and recovery smoke
+on:
+  push:
+    branches: ["codex/devmap-auth-smoke-20261124"]
+    paths:
+      - ".github/workflows/devmap-membership-smoke.yml"
+permissions:
+  contents: read
+jobs:
+  membership:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+      NEXT_PUBLIC_NEON_DATABASE_URL: https://ep-winter-dream-bdvu662b.c-8.us-east-2.aws.neon.tech/neondb
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4.4"
+      - run: bun install --frozen-lockfile
+      - name: Check npm registry version and project lockfile
+        run: |
+          npm view @ntustray/web-authentication-component version gitHead dist.integrity --json
+          integrity="$(npm view @ntustray/web-authentication-component@0.3.0 dist.integrity)"
+          test -n "$integrity"
+          grep -F '"@ntustray/web-authentication-component": ["@ntustray/web-authentication-component@0.3.0"' bun.lock | grep -F "$integrity" >/dev/null
+          test "$(node -p "require('./node_modules/@ntustray/web-authentication-component/package.json').version")" = 0.3.0
+          echo "Installed npm 0.3.0 matches the official registry and repository lockfile"
+      - run: bun run build
+      - name: Prepare Chromium
+        run: |
+          npm install --prefix "$RUNNER_TEMP/devmap-playwright" --no-audit --no-fund playwright@1.56.1
+          "$RUNNER_TEMP/devmap-playwright/node_modules/.bin/playwright" install --with-deps chromium
+      - name: Verify signup, login and recovery using the Neon development branch
+        run: |
+          python3 -m http.server 39281 --bind 127.0.0.1 --directory out >/dev/null 2>&1 &
+          trap 'kill "$!" 2>/dev/null || true' EXIT
+          curl --fail --silent --retry-connrefused --retry 8 http://localhost:39281/account/ >/dev/null
+          cat > "$RUNNER_TEMP/devmap-test.mjs" <<'NODE_TEST'
+          import assert from 'node:assert/strict';
+          import { randomUUID } from 'node:crypto';
+          import { createRequire } from 'node:module';
+          import { setTimeout as delay } from 'node:timers/promises';
+
+          const require = createRequire(process.env.RUNNER_TEMP + '/devmap-playwright/node_modules/playwright/package.json');
+          const { chromium } = require('playwright');
+          const site = 'http://localhost:39281';
+          const devHost = 'ep-winter-dream-bdvu662b.neonauth.c-8.us-east-2.aws.neon.tech';
+          const redactions = [];
+
+          function clean(value) {
+            return redactions.reduce((text, item) => text.replaceAll(item, '[test value]'), String(value)).replace(/\b\d{6}\b/g, '[code]');
+          }
+
+          function secret() {
+            const value = 'Qa-' + randomUUID() + '#4';
+            redactions.push(value);
+            return value;
+          }
+
+          async function mail(baseUrl, path, { body, token, method = body ? 'POST' : 'GET' } = {}) {
+            const action = path.split('/').slice(0, 2).join('/');
+            for (let attempt = 0; attempt < 2; attempt++) {
+              const response = await fetch(baseUrl + path, {
+                method,
+                headers: {
+                  accept: 'application/ld+json',
+                  ...(body ? { 'content-type': 'application/json' } : {}),
+                  ...(token ? { authorization: 'Bearer ' + token } : {}),
+                },
+                body: body ? JSON.stringify(body) : undefined,
+                signal: AbortSignal.timeout(12_000),
+              });
+              if (response.ok) {
+                await delay(300);
+                return response.status === 204 ? null : response.json();
+              }
+              const header = response.headers.get('retry-after');
+              const timestamp = header && Date.parse(header);
+              const wait = header && /^\d+$/.test(header) ? Number(header) * 1000 : (timestamp ? timestamp - Date.now() : 12_000);
+              if (response.status !== 429 || attempt > 0 || wait > 60_000) {
+                throw new Error('Disposable mailbox API ' + action + ' HTTP ' + response.status);
+              }
+              console.log('Backing off after disposable mailbox rate limit for ' + action);
+              await response.body?.cancel();
+              await delay(Math.max(wait, 1000));
+            }
+          }
+
+          async function identity() {
+            // Password-protected inboxes for a synthetic account only.
+            const providers = ['https://api.mail.gw', 'https://api.mail.tm'];
+            for (const baseUrl of providers) {
+              try {
+                const domains = (await mail(baseUrl, '/domains'))['hydra:member'];
+                const domain = domains?.find((option) => option.isActive && !option.isPrivate)?.domain;
+                assert(domain, 'No public test mailbox domain available');
+                const address = 'devmapqa-' + randomUUID().slice(0, 14) + '@' + domain;
+                redactions.push(address);
+                const credential = { address, password: secret() };
+                const { id } = await mail(baseUrl, '/accounts', { body: credential });
+                const { token } = await mail(baseUrl, '/token', { body: credential });
+                assert(id && token, 'Mailbox credentials unavailable');
+                redactions.push(token);
+                console.log('Created a dedicated test inbox with ' + new URL(baseUrl).hostname);
+                return { address, baseUrl, id, token, password: secret(), seen: new Set() };
+              } catch (error) {
+                console.log(new URL(baseUrl).hostname + ': ' + clean(error.message).slice(0, 160));
+              }
+            }
+            throw new Error('No disposable test inbox could be created');
+          }
+
+          async function receive(identity, purpose) {
+            const deadline = Date.now() + 85_000;
+            while (Date.now() < deadline) {
+              const inbox = await mail(identity.baseUrl, '/messages', { token: identity.token });
+              for (const summary of inbox['hydra:member'] ?? []) {
+                if (identity.seen.has(summary.id) || summary.from?.address !== 'auth@mail.myneon.app') continue;
+                const message = await mail(identity.baseUrl, '/messages/' + summary.id, { token: identity.token });
+                const code = /\b\d{6}\b/.exec(message.text ?? '')?.[0];
+                if (!code) continue;
+                identity.seen.add(summary.id);
+                redactions.push(code);
+                console.log('Received synthetic ' + purpose + ' OTP from Neon shared SMTP');
+                return code;
+              }
+              await delay(3000);
+            }
+            throw new Error('No mail received for ' + purpose + ' within 85 seconds');
+          }
+
+          async function open(browser, label) {
+            const context = await browser.newContext();
+            const page = await context.newPage();
+            page.setDefaultTimeout(16_000);
+            await page.route('**/*', async (route) => {
+              const url = new URL(route.request().url());
+              if (url.hostname.endsWith('.neon.tech') && !url.hostname.startsWith('ep-winter-dream-bdvu662b.')) {
+                await route.abort();
+                return;
+              }
+              await route.continue();
+            });
+            page.on('response', (response) => {
+              const url = new URL(response.url());
+              if (url.hostname === devHost && response.request().method() !== 'OPTIONS' && /sign-up|sign-in|email-otp/.test(url.pathname)) {
+                console.log(label + ' ' + url.pathname + ' HTTP ' + response.status());
+              }
+            });
+            return page;
+          }
+
+          const form = (page, name) => page.getByRole('form', { name, exact: true });
+          const button = (container, name) => container.getByRole('button', { name, exact: true });
+          const input = (container, name) => container.getByLabel(name, { exact: true });
+          const signedIn = (page) => button(page, '登出此裝置').waitFor();
+
+          async function account(page) {
+            await page.goto(site + '/account/', { waitUntil: 'domcontentloaded' });
+            await page.getByRole('heading', { name: '管理帳號與學習資料', exact: true }).waitFor();
+          }
+
+          async function passwordFields(container, value, confirm = false) {
+            await input(container, '密碼').fill(value);
+            if (confirm) await input(container, '再次輸入密碼').fill(value);
+          }
+
+          async function signup(page, fixture, name) {
+            await account(page);
+            await button(page, '建立帳號').click();
+            const registration = form(page, '建立帳號');
+            await input(registration, 'Email').fill(fixture.address);
+            await input(registration, '顯示名稱（選填）').fill(name);
+            await passwordFields(registration, fixture.password, true);
+            await button(registration, '建立帳號').click();
+            const verification = form(page, '驗證 Email');
+            await input(verification, '驗證碼').waitFor();
+            console.log('Registration kept the six-digit verification field visible');
+            assert.equal(await button(page, '登出此裝置').count(), 0);
+            await input(verification, '驗證碼').fill(await receive(fixture, 'signup'));
+            await button(verification, '驗證 Email').click();
+            const memberButton = button(page, '登出此裝置');
+            const verified = page.getByText('Email 已驗證，請登入。', { exact: true });
+            await memberButton.or(verified).first().waitFor();
+            if (await verified.isVisible()) await login(page, fixture);
+            await signedIn(page);
+          }
+
+          async function login(page, fixture, old = false) {
+            await account(page);
+            const login = form(page, '登入');
+            await input(login, 'Email').fill(fixture.address);
+            await passwordFields(login, fixture.password);
+            await button(login, '登入').click();
+            if (old) await page.getByText('Email 或密碼不正確，請確認後再試。', { exact: true }).waitFor();
+            else await signedIn(page);
+          }
+
+          async function recover(page, fixture, replacement) {
+            await account(page);
+            await button(page, '忘記密碼').click();
+            const request = form(page, '忘記密碼');
+            await input(request, 'Email').fill(fixture.address);
+            await button(request, '忘記密碼').click();
+            const reset = form(page, '設定新密碼');
+            await input(reset, '驗證碼').waitFor();
+            await input(reset, '驗證碼').fill(await receive(fixture, 'password reset'));
+            await passwordFields(reset, replacement, true);
+            await button(reset, '設定新密碼').click();
+            await page.getByText('密碼已更新，請重新登入。', { exact: true }).waitFor();
+          }
+
+          let stage = 'starting isolated browser sessions';
+          let activePage;
+          let fixture;
+          const browser = await chromium.launch();
+          try {
+            stage = 'provisioning a password-protected temporary inbox';
+            fixture = await identity();
+            const firstPage = await open(browser, 'Signup');
+            const loginPage = await open(browser, 'Fresh sign-in');
+            const recovery = await open(browser, 'Recovery');
+            stage = 'registration and email OTP verification';
+            activePage = firstPage;
+            await signup(firstPage, fixture, 'Dev Map QA');
+            console.log('Registration OTP verified and the user entered the member workspace');
+            stage = 'password sign-in in a fresh browser context';
+            activePage = loginPage;
+            await login(loginPage, fixture);
+            console.log('Password sign-in completed in a fresh browser context');
+            stage = 'password reset and sign-in with the replacement password';
+            activePage = recovery;
+            const replacement = secret();
+            await recover(recovery, fixture, replacement);
+            await login(recovery, fixture, true);
+            await login(recovery, { ...fixture, password: replacement });
+            console.log('Recovery OTP verified, old password rejected, replacement password signed in');
+          } catch (error) {
+            console.error('Stopped during ' + stage + ': ' + clean(error.message).slice(0, 450));
+            const state = activePage ? await activePage.locator('main').first().innerText({ timeout: 2000 }).catch(() => '') : '';
+            if (state) console.error('Visible application state: ' + clean(state).replaceAll('\n', ' | ').slice(0, 400));
+            process.exitCode = 1;
+          } finally {
+            await browser.close();
+            if (fixture) {
+              await mail(fixture.baseUrl, '/accounts/' + fixture.id, { token: fixture.token, method: 'DELETE' }).catch(() => console.log('Test inbox cleanup was unavailable'));
+            }
+          }
+          NODE_TEST
+          node "$RUNNER_TEMP/devmap-test.mjs"
