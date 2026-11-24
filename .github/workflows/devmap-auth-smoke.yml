@@ -4,6 +4,8 @@ on:
     branches: ["codex/devmap-auth-smoke-20261124"]
     paths:
       - ".github/workflows/devmap-auth-smoke.yml"
+      - "src/components/app-shell.tsx"
+      - "tests/member-form.test.ts"
 permissions:
   contents: read
 jobs:
